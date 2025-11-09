@@ -8,6 +8,8 @@ function onOpen() {
   
   // Menu principal
   ui.createMenu('🎓 Répartition Classes')
+    .addItem('🎯 PANNEAU DE CONTRÔLE', 'showPanneauControle')
+    .addSeparator()
     .addItem('📊 Dashboard', 'showDashboard')
     .addSeparator()
     .addItem('⚙️ Configuration Optimisation', 'showOptimizationPanel')
@@ -133,6 +135,28 @@ function showSystemLogs() {
     'Un visualiseur de logs sera disponible dans BASE 5 HUB.',
     ui.ButtonSet.OK
   );
+}
+
+/**
+ * Affiche le Panneau de Contrôle unifié
+ * Interface complète : Initialisation + LEGACY + Outils
+ */
+function showPanneauControle() {
+  const html = HtmlService.createHtmlOutputFromFile('PanneauControle')
+    .setWidth(450)
+    .setTitle('🎯 Panneau de Contrôle');
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Ouvre l'interface de configuration complète
+ */
+function ouvrirConfigurationComplete() {
+  const html = HtmlService.createHtmlOutputFromFile('ConfigurationComplete')
+    .setWidth(1200)
+    .setHeight(800)
+    .setTitle('⚙️ Configuration Complète');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Configuration');
 }
 
 /**************************** FONCTIONS LEGACY PIPELINE *********************************/
