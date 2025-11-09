@@ -23,6 +23,16 @@
 
 **Impact :** Ce bug bloquait le chargement complet du script, empêchant l'apparition de TOUS les menus dans Google Sheets
 
+### Problème 3 : Autorisations OAuth manquantes (CRITIQUE)
+**Symptôme :** `Exception: Les autorisations spécifiées ne sont pas suffisantes pour appeler Ui.showSidebar. Autorisations requises : https://www.googleapis.com/auth/script.container.ui`
+**Cause :** Le fichier `appsscript.json` ne déclarait que le scope `spreadsheets`, mais pas `script.container.ui` nécessaire pour afficher les sidebars, dialogs et alertes
+
+**Solution appliquée :**
+- ✅ Ajout du scope `https://www.googleapis.com/auth/script.container.ui` dans appsscript.json
+- ✅ Ce scope permet : showSidebar(), showModalDialog(), showModelessDialog(), alert(), prompt()
+
+**Impact :** Sans ce scope, aucune interface (sidebar, dialog) ne peut s'ouvrir, même si le menu apparaît
+
 ---
 
 ## 📋 ÉTAPES DE DÉPLOIEMENT
@@ -185,7 +195,22 @@ Test 3: Vérification PanneauControle.html...
 
 **Branche :** `claude/migrate-base14-to-base15-011CUxjaabobyj7vtTao9MkT`
 
-### Commit b0aaf8a (DERNIER) 🔥
+### Commit a4c8856 (DERNIER) 🔥
+**Message :** 🔐 Ajout scope OAuth pour UI (sidebar/dialogs)
+
+**Modifications critiques :**
+- Ajout scope `script.container.ui` dans appsscript.json
+- Résolution erreur "autorisations insuffisantes pour Ui.showSidebar"
+- Permet affichage sidebars, dialogs, alertes
+
+### Commit b819722
+**Message :** 📘 Documentation SyntaxError - Explication complète résolution
+
+**Modifications :**
+- Documentation technique complète du bug SyntaxError
+- Explication scope global Apps Script
+
+### Commit b0aaf8a
 **Message :** 🐛 FIX conflits déclarations - ERROR_CODES + getConfig
 
 **Modifications critiques :**
