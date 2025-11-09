@@ -3,5 +3,7 @@
 *.txt
 .git
 .gitignore
+.clasp.json
+.claspignore
 README
 LICENSE
