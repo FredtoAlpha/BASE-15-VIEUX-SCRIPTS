@@ -41,13 +41,17 @@ function compterEffectifs(isTest) {
     afficherResultats(statistiques, nomOngletResultat, isTest);
     
     // Message de confirmation
-    SpreadsheetApp.getUi().alert(
-      `Analyse terminée pour ${onglets.length} ${isTest ? "onglets TEST" : "classes sources"}.\n` +
-      `Les résultats sont affichés dans l'onglet "${nomOngletResultat}".`
-    );
-    
+    const successMessage = `Analyse terminée pour ${onglets.length} ${isTest ? "onglets TEST" : "classes sources"}.\n` +
+      `Les résultats sont affichés dans l'onglet "${nomOngletResultat}".`;
+    SpreadsheetApp.getUi().alert(successMessage);
+
+    // Retourner message pour interface
+    return successMessage;
+
   } catch (e) {
-    SpreadsheetApp.getUi().alert("Erreur lors du comptage : " + e.message);
+    const errorMessage = "Erreur lors du comptage : " + e.message;
+    SpreadsheetApp.getUi().alert(errorMessage);
+    throw new Error(errorMessage);
     Logger.log("ERREUR: " + e.message);
     Logger.log(e.stack);
   }
