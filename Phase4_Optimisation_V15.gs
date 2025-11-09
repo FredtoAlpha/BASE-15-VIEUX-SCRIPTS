@@ -368,22 +368,13 @@ function logAmeliorations(statsInitiales, statsFinales, extraKeys) {
 }
 
 // === CODES D'ERREUR ===
-const ERROR_CODES = {
-  NO_STUDENTS_FOUND: 'NO_STUDENTS_FOUND',
-  LESS_THAN_TWO_CLASSES: 'LESS_THAN_TWO_CLASSES',
-  INVALID_STRUCTURE: 'INVALID_STRUCTURE',
-  NO_TEST_SHEETS: 'NO_TEST_SHEETS',
-  MISSING_CRITICAL_DATA_COLUMN: 'MISSING_CRITICAL_DATA_COLUMN',
-  SWAP_WRITE_FAILED: 'SWAP_WRITE_FAILED',
-  JOURNAL_SAVE_FAILED: 'JOURNAL_SAVE_FAILED',
-  UNCAUGHT_EXCEPTION: 'UNCAUGHT_EXCEPTION'
-};
+// ERROR_CODES est défini globalement dans Config.gs
 
 /**
- * === SHIM COMPATIBILITÉ : getConfig() ===
+ * === SHIM COMPATIBILITÉ : getConfig_V14Shim() ===
  * Essaie plusieurs sources possibles de configuration et adapte au format V14
  */
-function getConfig() {
+function getConfig_V14Shim() {
   // 1) Fonction getStructureRules() si elle existe
   try { 
     if (typeof getStructureRules === 'function') {
@@ -488,7 +479,7 @@ function V11_OptimisationDistribution_ByMode(poidsInput, poidsOverride, maxSwaps
   Logger.log(`[V14] Optimisation par mode: ${mode}`);
   
   // Charger la config
-  const config = configOpt || getConfig();
+  const config = configOpt || getConfig_V14Shim();
   
   // Lier les constantes globales (compat layer)
   _v14BindGlobals(config);
@@ -580,7 +571,7 @@ function V11_OptimisationDistribution_Combined(poidsInput, poidsOverride, maxSwa
     const SEUIL_IMPACT_MINIMAL = 1e-6;
     const PARITE_TOLERANCE = 2; // Écart F/M maximum accepté par classe (RÉDUIT À 2)
     
-    const config = getConfig(); 
+    const config = getConfig_V14Shim(); 
     if (!config || !config.SHEETS) {
         throw new Error("Configuration globale (CONFIG ou CONFIG.SHEETS) non chargée ou invalide pour le moteur V14.");
     }
@@ -1577,7 +1568,7 @@ function respecteContraintes(e1, e2, allStudents, structureData, optionsNiveauDa
 function analyserContraintesDetaillees() {
     Logger.log("=== ANALYSE DÉTAILLÉE DES CONTRAINTES ===");
     
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const niveau = determinerNiveauActifCache();
     
     // Charger les données
@@ -1741,7 +1732,7 @@ function analyserContraintesDetaillees() {
 function testChargerEleves() {
     Logger.log("=== TEST CHARGEMENT ÉLÈVES ===");
     
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const result = chargerElevesEtClasses(config, "MOBILITE");
     
     Logger.log("Success: " + result.success);
@@ -1978,12 +1969,12 @@ function appliquerSwapsIterativement(
 }
 
 // --- Fonctions de Chargement ---
-function determinerNiveauActif_placeholder_final() { const config = getConfig(); return config?.NIVEAU || "5°"; }
+function determinerNiveauActif_placeholder_final() { const config = getConfig_V14Shim(); return config?.NIVEAU || "5°"; }
 // niveauCache est déclaré globalement au début du fichier
 function determinerNiveauActifCache() { if (niveauCache === null) { niveauCache = determinerNiveauActif_placeholder_final(); Logger.log(`Niveau actif mis en cache: ${niveauCache}`); } return niveauCache; } 
 
 function lireStructureFeuille(sheet) { 
-    const config = getConfig(); 
+    const config = getConfig_V14Shim(); 
     const structureSheetName = config?.SHEETS?.STRUCTURE || "_STRUCTURE"; 
     Logger.log(`Moteur V14 - lireStructureFeuille: Lecture de '${structureSheetName}'...`);
     try { 
@@ -2019,7 +2010,7 @@ function lireStructureFeuille(sheet) {
         return { classes }; 
     } catch (error) { 
         Logger.log(`ERREUR Moteur V14 - lireStructureFeuille: ${error.message}. Fallback...`); 
-        const configFallback = getConfig(); 
+        const configFallback = getConfig_V14Shim(); 
         const testSheetsFallback = getTestSheetsForV14Optimization(); 
         const suffixFallback = configFallback?.TEST_SUFFIX || "TEST";
         const fallback = { classes: testSheetsFallback.map(s => ({ nom: s.getName().replace(new RegExp(suffixFallback + '$', 'i'), ''), options: [] })) }; 
@@ -2049,7 +2040,7 @@ function getTestSheetsForV14Optimization() {
     Logger.log("Moteur V14: Récupération feuilles TEST (POUR OPTIM V14 AVEC CONFIG)..."); 
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        const config = getConfig(); 
+        const config = getConfig_V14Shim(); 
         const testSuffix = config?.TEST_SUFFIX || "TEST";
         const testSuffixRegex = new RegExp(testSuffix + '$', 'i');
         const protectedSheets = config?.PROTECTED_SHEETS || [];
@@ -2100,7 +2091,7 @@ function chargerElevesEtClasses(config, headerMobilityALire) {
 
         const students = [];
         const classesMap = {};
-        const currentConfig = config || getConfig();
+        const currentConfig = config || getConfig_V14Shim();
 
         // Définition des noms d'en-têtes attendus
         const HEADER_NAMES = {
@@ -2604,7 +2595,7 @@ function sauvegarderJournalSwaps(journal, niveau, scenario) {
          const ss = SpreadsheetApp.getActiveSpreadsheet();
          Logger.log("sauvegarderJournalSwaps: SpreadsheetApp OK.");
          
-         const config = getConfig();
+         const config = getConfig_V14Shim();
          if (!config || !config.SHEETS || !config.SHEETS.JOURNAL) {
              Logger.log(`ERREUR sauvegarderJournalSwaps: config.SHEETS.JOURNAL non défini. Config: ${JSON.stringify(config)}`);
              return; 
@@ -3140,7 +3131,7 @@ function verifierDoublonsChargerEleves() {
   Logger.log("=== RECHERCHE DE DOUBLONS chargerElevesEtClasses ===");
   
   // Cette fonction vérifie juste que vous utilisez la bonne version
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const result = chargerElevesEtClasses(config, "MOBILITE");
   
   Logger.log("Fonction appelée retourne:");
@@ -3206,7 +3197,7 @@ function tracerAppelChargerEleves() {
   // Regarder dans chargerElevesEtClasses (version avec SEXE)
   try {
     // Peut-être que vous avez une autre fonction qui wrap chargerElevesEtClasses ?
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     
     // Test 1: Appel direct
     Logger.log("\n1. Test appel DIRECT:");
@@ -3275,7 +3266,7 @@ function testerOptimisationAvecPatch() {
   
   try {
     // Lancer un test rapide
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const result = chargerElevesEtClasses(config, "MOBILITE");
     
     Logger.log("Avec le patch:");
@@ -3334,7 +3325,7 @@ function lancerOptimisationAvecDebugComplet() {
     Logger.log("\n=== ÉTAPE 2: LANCEMENT OPTIMISATION ===");
     
     // Activer le mode debug dans la configuration temporairement
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const debugModeOriginal = config.DEBUG_MODE;
     config.DEBUG_MODE = true;
     
@@ -3426,7 +3417,7 @@ function verifierRespectContraintes() {
 function analyserPourquoiZeroSwaps() {
   Logger.log("\n=== ANALYSE APPROFONDIE: POURQUOI 0 SWAPS? ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   
   // Vérifier les paramètres critiques
   Logger.log("\n1. PARAMÈTRES DE CONFIGURATION:");
@@ -3534,7 +3525,7 @@ function analyserPourquoiZeroSwaps() {
 function testerUnSwapDirect() {
   Logger.log("\n=== TEST D'UN SWAP DIRECT ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
   
   if (!elevesResult.success || !elevesResult.classesMap) {
@@ -3603,7 +3594,7 @@ function testerUnSwapDirect() {
 function diagnostiquerProblemeImpactNul() {
   Logger.log("=== DIAGNOSTIC PROBLÈME IMPACT NUL ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const niveau = determinerNiveauActifCache();
   
   // Charger les données
@@ -3848,7 +3839,7 @@ function testerAvecParametresModifies() {
 function forcerSwapManuel() {
   Logger.log("=== FORCER UN SWAP MANUEL ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
   
   if (!elevesResult.success) {
@@ -4022,7 +4013,7 @@ function testImmediatV14() {
     
     // Test 2: Chargement rapide des données
     Logger.log("\n2. Test chargement données:");
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
     
     Logger.log("   - Config chargé: " + (config ? "✅" : "❌"));
@@ -4294,7 +4285,7 @@ function resoudreProblemeImpactNul() {
 function diagnostiquerClassification() {
   Logger.log("=== DIAGNOSTIC CLASSIFICATION DES ÉLÈVES ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
   
   if (!elevesResult.success) {
@@ -4469,7 +4460,7 @@ function classifierElevesDebug(students, extraKeys) {
 function testerClassificationComplete() {
   Logger.log("=== TEST CLASSIFICATION COMPLÈTE ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
   
   if (!elevesResult.success) {
@@ -4518,7 +4509,7 @@ function testerClassificationComplete() {
 function verifierDonneesBrutes() {
   Logger.log("=== VÉRIFICATION DONNÉES BRUTES ===");
   
-  const config = getConfig();
+  const config = getConfig_V14Shim();
   const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
   
   if (!elevesResult.success || !elevesResult.students) {
@@ -4807,7 +4798,7 @@ function testerAvecEntetesPersonnalises(headersCOM, headersTRA, headersPART) {
   };
   
   try {
-    const result = chargerElevesEtClasses(getConfig(), "MOBILITE");
+    const result = chargerElevesEtClasses(getConfig_V14Shim(), "MOBILITE");
     
     if (result.success && result.students && result.students.length > 0) {
       // Vérifier les premières données
@@ -4964,7 +4955,7 @@ function testAvecIndicesForces() {
   Logger.log("Indices forcés: " + JSON.stringify(indicesForces));
   
   try {
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const testSheets = getTestSheetsForV14Optimization();
     
     if (testSheets.length === 0) {
@@ -5180,7 +5171,7 @@ function testerMoteurAvecFonctionCorrigee() {
   try {
     // Test 1: Chargement des données
     Logger.log("1. Test chargement avec fonction corrigée:");
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const elevesResult = chargerElevesEtClasses(config, "MOBILITE");
     
     if (!elevesResult.success) {
@@ -5308,7 +5299,7 @@ function resoudreDefinitivementV14() {
     return testMoteur;
   }
   function testChargementCorrige() {
-    const config = getConfig();
+    const config = getConfig_V14Shim();
     const result = chargerElevesEtClasses(config, "MOBILITE");
     
     Logger.log("=== TEST CHARGEMENT CORRIGÉ ===");
