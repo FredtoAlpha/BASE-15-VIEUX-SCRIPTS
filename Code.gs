@@ -4,43 +4,105 @@
  * Crée le menu personnalisé lors de l'ouverture du fichier
  */
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  
-  // Menu principal
-  ui.createMenu('🎓 Répartition Classes')
-    .addItem('🎯 PANNEAU DE CONTRÔLE', 'showPanneauControle')
-    .addSeparator()
-    .addItem('📊 Dashboard', 'showDashboard')
-    .addSeparator()
-    .addItem('⚙️ Configuration Optimisation', 'showOptimizationPanel')
-    .addItem('🎯 Lancer Optimisation', 'showOptimizationPanel')
-    .addSeparator()
-    .addItem('👥 Interface Répartition V2', 'showInterfaceV2')
-    .addSeparator()
-    .addItem('📈 Analytics & Statistiques', 'showAnalytics')
-    .addItem('👥 Groupes de Besoin', 'showGroupsModule')
-    .addSeparator()
-    .addItem('📄 Finalisation & Export', 'showFinalisationUI')
-    .addSeparator()
-    .addItem('🔧 Paramètres Avancés', 'showAdvancedSettings')
-    .addItem('📋 Logs Système', 'showSystemLogs')
-    .addToUi();
-  
-  // Menu LEGACY (Pipeline complet : Sources → TEST)
-  ui.createMenu('⚙️ LEGACY Pipeline')
-    .addItem('📋 Voir Classes Sources (6°1, 6°2...)', 'legacy_viewSourceClasses')
-    .addItem('⚙️ Configurer _STRUCTURE', 'legacy_openStructure')
-    .addSeparator()
-    .addItem('▶️ Créer Onglets TEST (Pipeline Complet)', 'legacy_runFullPipeline')
-    .addSeparator()
-    .addSubMenu(ui.createMenu('🔧 Phases Individuelles')
-      .addItem('🎯 Phase 1 - Options & LV2', 'legacy_runPhase1')
-      .addItem('🔗 Phase 2 - ASSO/DISSO', 'legacy_runPhase2')
-      .addItem('⚖️ Phase 3 - Effectifs & Parité', 'legacy_runPhase3')
-      .addItem('🔄 Phase 4 - Équilibrage Scores', 'legacy_runPhase4'))
-    .addSeparator()
-    .addItem('📊 Voir Résultats TEST', 'legacy_viewTestResults')
-    .addToUi();
+  try {
+    const ui = SpreadsheetApp.getUi();
+
+    Logger.log('onOpen() démarré');
+
+    // ========== MENU CONSOLE (VIEUX-SCRIPTS) ==========
+    ui.createMenu('🎯 CONSOLE')
+      .addItem('📋 Panneau de Contrôle', 'showPanneauControle')
+      .addSeparator()
+      .addItem('🏗️ Initialiser Système', 'ouvrirInitialisation')
+      .addItem('🆔 Générer NOM_PRENOM & ID', 'genererNomPrenomEtID')
+      .addItem('📋 Listes Déroulantes', 'ajouterListesDeroulantes')
+      .addSeparator()
+      .addItem('📊 COMPTER Sources', 'compterEffectifsOptionsEtLangues')
+      .addSeparator()
+      .addItem('🔗 Consolider Sources', 'consoliderDonnees')
+      .addItem('✅ Vérifier Données', 'verifierDonnees')
+      .addSeparator()
+      .addItem('⚙️ Configuration Structure', 'ouvrirConfigurationStructure')
+      .addItem('⚙️ Configuration Complète', 'ouvrirConfigurationComplete')
+      .addSeparator()
+      .addItem('🔧 Test Menus', 'testMenus')
+      .addToUi();
+
+    Logger.log('Menu CONSOLE créé');
+
+    // ========== MENU RÉPARTITION (BASE-15 existant) ==========
+    ui.createMenu('🎓 Répartition')
+      .addItem('⚙️ Configuration Optimisation', 'showOptimizationPanel')
+      .addItem('🎯 Lancer Optimisation', 'showOptimizationPanel')
+      .addSeparator()
+      .addItem('👥 Interface Répartition V2', 'showInterfaceV2')
+      .addSeparator()
+      .addItem('📄 Finalisation & Export', 'showFinalisationUI')
+      .addToUi();
+
+    Logger.log('Menu Répartition créé');
+
+    // ========== MENU LEGACY PIPELINE ==========
+    ui.createMenu('⚙️ LEGACY')
+      .addItem('📋 Voir Classes Sources', 'legacy_viewSourceClasses')
+      .addItem('⚙️ Configurer _STRUCTURE', 'legacy_openStructure')
+      .addSeparator()
+      .addItem('▶️ Pipeline Complet', 'legacy_runFullPipeline')
+      .addSeparator()
+      .addSubMenu(ui.createMenu('🔧 Phases')
+        .addItem('Phase 1 - Options & LV2', 'legacy_runPhase1')
+        .addItem('Phase 2 - ASSO/DISSO', 'legacy_runPhase2')
+        .addItem('Phase 3 - Effectifs & Parité', 'legacy_runPhase3')
+        .addItem('Phase 4 - Équilibrage', 'legacy_runPhase4'))
+      .addSeparator()
+      .addItem('📊 Voir Résultats TEST', 'legacy_viewTestResults')
+      .addToUi();
+
+    Logger.log('Menu LEGACY créé');
+    Logger.log('onOpen() terminé avec succès');
+
+  } catch (error) {
+    Logger.log('ERREUR dans onOpen(): ' + error.toString());
+    Logger.log('Stack: ' + error.stack);
+    SpreadsheetApp.getUi().alert('Erreur création menus: ' + error.toString());
+  }
+}
+
+/**
+ * Fonction de test pour diagnostiquer les problèmes de menus
+ */
+function testMenus() {
+  Logger.log('=== TEST MENUS ===');
+
+  // Test 1: onOpen
+  try {
+    Logger.log('Test 1: Exécution onOpen()...');
+    onOpen();
+    Logger.log('✅ onOpen() réussi');
+  } catch (error) {
+    Logger.log('❌ onOpen() échoué: ' + error.toString());
+  }
+
+  // Test 2: showPanneauControle
+  try {
+    Logger.log('Test 2: Test showPanneauControle()...');
+    Logger.log('Vérification fonction existe: ' + (typeof showPanneauControle));
+    Logger.log('✅ showPanneauControle existe');
+  } catch (error) {
+    Logger.log('❌ showPanneauControle problème: ' + error.toString());
+  }
+
+  // Test 3: Vérifier fichier HTML
+  try {
+    Logger.log('Test 3: Vérification PanneauControle.html...');
+    const html = HtmlService.createHtmlOutputFromFile('PanneauControle');
+    Logger.log('✅ PanneauControle.html existe et peut être chargé');
+  } catch (error) {
+    Logger.log('❌ PanneauControle.html problème: ' + error.toString());
+  }
+
+  Logger.log('=== FIN TEST MENUS ===');
+  SpreadsheetApp.getUi().alert('Tests terminés ! Consultez les logs (View > Logs)');
 }
 
 /**
