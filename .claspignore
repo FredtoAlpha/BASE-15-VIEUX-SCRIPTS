@@ -1,0 +1,7 @@
+# Fichiers à ignorer lors du déploiement clasp
+*.md
+*.txt
+.git
+.gitignore
+README
+LICENSE
