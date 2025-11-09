@@ -6,13 +6,26 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
 
-  // Menu principal - PANNEAU DE CONTRÔLE UNIFIÉ
-  ui.createMenu('🎯 CONSOLE BASE-15')
-    .addItem('📋 PANNEAU DE CONTRÔLE', 'showPanneauControle')
+  // ========== NOUVEAU MENU CONSOLE ==========
+  ui.createMenu('🎯 CONSOLE')
+    .addItem('📋 Panneau de Contrôle', 'showPanneauControle')
+    .addSeparator()
+    .addItem('🏗️ Initialiser Système', 'ouvrirInitialisation')
+    .addItem('🆔 Générer NOM_PRENOM & ID', 'genererNomPrenomEtID')
+    .addItem('📋 Listes Déroulantes', 'ajouterListesDeroulantes')
+    .addSeparator()
+    .addItem('📊 COMPTER Sources', 'compterEffectifsOptionsEtLangues')
+    .addItem('📊 COMPTER Test', 'compterEffectifsOptionsEtLanguesTest')
+    .addSeparator()
+    .addItem('🔗 Consolider Sources', 'consoliderDonnees')
+    .addItem('✅ Vérifier Données', 'verifierDonnees')
+    .addSeparator()
+    .addItem('⚙️ Configuration Structure', 'ouvrirConfigurationStructure')
+    .addItem('⚙️ Configuration Complète', 'ouvrirConfigurationComplete')
     .addToUi();
 
   // Menu LEGACY (Pipeline complet : Sources → TEST)
-  ui.createMenu('⚙️ LEGACY Pipeline')
+  ui.createMenu('⚙️ LEGACY')
     .addItem('📋 Voir Classes Sources (6°1, 6°2...)', 'legacy_viewSourceClasses')
     .addItem('⚙️ Configurer _STRUCTURE', 'legacy_openStructure')
     .addSeparator()
