@@ -4,41 +4,55 @@
  * Crée le menu personnalisé lors de l'ouverture du fichier
  */
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
+  try {
+    const ui = SpreadsheetApp.getUi();
 
-  // ========== NOUVEAU MENU CONSOLE ==========
-  ui.createMenu('🎯 CONSOLE')
-    .addItem('📋 Panneau de Contrôle', 'showPanneauControle')
-    .addSeparator()
-    .addItem('🏗️ Initialiser Système', 'ouvrirInitialisation')
-    .addItem('🆔 Générer NOM_PRENOM & ID', 'genererNomPrenomEtID')
-    .addItem('📋 Listes Déroulantes', 'ajouterListesDeroulantes')
-    .addSeparator()
-    .addItem('📊 COMPTER Sources', 'compterEffectifsOptionsEtLangues')
-    .addItem('📊 COMPTER Test', 'compterEffectifsOptionsEtLanguesTest')
-    .addSeparator()
-    .addItem('🔗 Consolider Sources', 'consoliderDonnees')
-    .addItem('✅ Vérifier Données', 'verifierDonnees')
-    .addSeparator()
-    .addItem('⚙️ Configuration Structure', 'ouvrirConfigurationStructure')
-    .addItem('⚙️ Configuration Complète', 'ouvrirConfigurationComplete')
-    .addToUi();
+    Logger.log('onOpen() démarré');
 
-  // Menu LEGACY (Pipeline complet : Sources → TEST)
-  ui.createMenu('⚙️ LEGACY')
-    .addItem('📋 Voir Classes Sources (6°1, 6°2...)', 'legacy_viewSourceClasses')
-    .addItem('⚙️ Configurer _STRUCTURE', 'legacy_openStructure')
-    .addSeparator()
-    .addItem('▶️ Créer Onglets TEST (Pipeline Complet)', 'legacy_runFullPipeline')
-    .addSeparator()
-    .addSubMenu(ui.createMenu('🔧 Phases Individuelles')
-      .addItem('🎯 Phase 1 - Options & LV2', 'legacy_runPhase1')
-      .addItem('🔗 Phase 2 - ASSO/DISSO', 'legacy_runPhase2')
-      .addItem('⚖️ Phase 3 - Effectifs & Parité', 'legacy_runPhase3')
-      .addItem('🔄 Phase 4 - Équilibrage Scores', 'legacy_runPhase4'))
-    .addSeparator()
-    .addItem('📊 Voir Résultats TEST', 'legacy_viewTestResults')
-    .addToUi();
+    // ========== NOUVEAU MENU CONSOLE ==========
+    ui.createMenu('🎯 CONSOLE')
+      .addItem('📋 Panneau de Contrôle', 'showPanneauControle')
+      .addSeparator()
+      .addItem('🏗️ Initialiser Système', 'ouvrirInitialisation')
+      .addItem('🆔 Générer NOM_PRENOM & ID', 'genererNomPrenomEtID')
+      .addItem('📋 Listes Déroulantes', 'ajouterListesDeroulantes')
+      .addSeparator()
+      .addItem('📊 COMPTER Sources', 'compterEffectifsOptionsEtLangues')
+      .addItem('📊 COMPTER Test', 'compterEffectifsOptionsEtLanguesTest')
+      .addSeparator()
+      .addItem('🔗 Consolider Sources', 'consoliderDonnees')
+      .addItem('✅ Vérifier Données', 'verifierDonnees')
+      .addSeparator()
+      .addItem('⚙️ Configuration Structure', 'ouvrirConfigurationStructure')
+      .addItem('⚙️ Configuration Complète', 'ouvrirConfigurationComplete')
+      .addToUi();
+
+    Logger.log('Menu CONSOLE créé');
+
+    // Menu LEGACY (Pipeline complet : Sources → TEST)
+    ui.createMenu('⚙️ LEGACY')
+      .addItem('📋 Voir Classes Sources (6°1, 6°2...)', 'legacy_viewSourceClasses')
+      .addItem('⚙️ Configurer _STRUCTURE', 'legacy_openStructure')
+      .addSeparator()
+      .addItem('▶️ Créer Onglets TEST (Pipeline Complet)', 'legacy_runFullPipeline')
+      .addSeparator()
+      .addSubMenu(ui.createMenu('🔧 Phases Individuelles')
+        .addItem('🎯 Phase 1 - Options & LV2', 'legacy_runPhase1')
+        .addItem('🔗 Phase 2 - ASSO/DISSO', 'legacy_runPhase2')
+        .addItem('⚖️ Phase 3 - Effectifs & Parité', 'legacy_runPhase3')
+        .addItem('🔄 Phase 4 - Équilibrage Scores', 'legacy_runPhase4'))
+      .addSeparator()
+      .addItem('📊 Voir Résultats TEST', 'legacy_viewTestResults')
+      .addToUi();
+
+    Logger.log('Menu LEGACY créé');
+    Logger.log('onOpen() terminé avec succès');
+
+  } catch (error) {
+    Logger.log('ERREUR dans onOpen(): ' + error.toString());
+    Logger.log('Stack: ' + error.stack);
+    // Ne pas afficher d'alert ici car ça peut bloquer le chargement
+  }
 }
 
 /**
