@@ -5,27 +5,12 @@
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-  
-  // Menu principal
-  ui.createMenu('🎓 Répartition Classes')
-    .addItem('🎯 PANNEAU DE CONTRÔLE', 'showPanneauControle')
-    .addSeparator()
-    .addItem('📊 Dashboard', 'showDashboard')
-    .addSeparator()
-    .addItem('⚙️ Configuration Optimisation', 'showOptimizationPanel')
-    .addItem('🎯 Lancer Optimisation', 'showOptimizationPanel')
-    .addSeparator()
-    .addItem('👥 Interface Répartition V2', 'showInterfaceV2')
-    .addSeparator()
-    .addItem('📈 Analytics & Statistiques', 'showAnalytics')
-    .addItem('👥 Groupes de Besoin', 'showGroupsModule')
-    .addSeparator()
-    .addItem('📄 Finalisation & Export', 'showFinalisationUI')
-    .addSeparator()
-    .addItem('🔧 Paramètres Avancés', 'showAdvancedSettings')
-    .addItem('📋 Logs Système', 'showSystemLogs')
+
+  // Menu principal - PANNEAU DE CONTRÔLE UNIFIÉ
+  ui.createMenu('🎯 CONSOLE BASE-15')
+    .addItem('📋 PANNEAU DE CONTRÔLE', 'showPanneauControle')
     .addToUi();
-  
+
   // Menu LEGACY (Pipeline complet : Sources → TEST)
   ui.createMenu('⚙️ LEGACY Pipeline')
     .addItem('📋 Voir Classes Sources (6°1, 6°2...)', 'legacy_viewSourceClasses')
