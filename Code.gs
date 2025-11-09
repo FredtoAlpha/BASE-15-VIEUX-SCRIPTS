@@ -154,21 +154,74 @@ function showSystemLogs() {
  * Interface complète : Initialisation + LEGACY + Outils
  */
 function showPanneauControle() {
-  const html = HtmlService.createHtmlOutputFromFile('PanneauControle')
-    .setWidth(450)
-    .setTitle('🎯 Panneau de Contrôle');
-  SpreadsheetApp.getUi().showSidebar(html);
+  try {
+    Logger.log('showPanneauControle() appelée');
+    const html = HtmlService.createHtmlOutputFromFile('PanneauControle')
+      .setWidth(450)
+      .setTitle('🎯 Panneau de Contrôle');
+    Logger.log('HTML créé, affichage sidebar...');
+    SpreadsheetApp.getUi().showSidebar(html);
+    Logger.log('Sidebar affichée avec succès');
+  } catch (error) {
+    Logger.log('ERREUR dans showPanneauControle: ' + error.toString());
+    SpreadsheetApp.getUi().alert('Erreur: ' + error.toString());
+  }
 }
 
 /**
  * Ouvre l'interface de configuration complète
  */
 function ouvrirConfigurationComplete() {
-  const html = HtmlService.createHtmlOutputFromFile('ConfigurationComplete')
-    .setWidth(1200)
-    .setHeight(800)
-    .setTitle('⚙️ Configuration Complète');
-  SpreadsheetApp.getUi().showModalDialog(html, 'Configuration');
+  try {
+    Logger.log('ouvrirConfigurationComplete() appelée');
+    const html = HtmlService.createHtmlOutputFromFile('ConfigurationComplete')
+      .setWidth(1200)
+      .setHeight(800)
+      .setTitle('⚙️ Configuration Complète');
+    Logger.log('HTML créé, affichage modal...');
+    SpreadsheetApp.getUi().showModalDialog(html, 'Configuration');
+    Logger.log('Modal affiché avec succès');
+  } catch (error) {
+    Logger.log('ERREUR dans ouvrirConfigurationComplete: ' + error.toString());
+    SpreadsheetApp.getUi().alert('Erreur: ' + error.toString());
+  }
+}
+
+/**
+ * FONCTION DE TEST - Vérifie que les menus fonctionnent
+ */
+function testMenus() {
+  Logger.log('=== TEST MENUS ===');
+
+  // Test 1: onOpen
+  try {
+    Logger.log('Test 1: Exécution onOpen()...');
+    onOpen();
+    Logger.log('✅ onOpen() réussi');
+  } catch (error) {
+    Logger.log('❌ onOpen() échoué: ' + error.toString());
+  }
+
+  // Test 2: showPanneauControle
+  try {
+    Logger.log('Test 2: Test showPanneauControle()...');
+    Logger.log('Vérification fonction existe: ' + (typeof showPanneauControle));
+    Logger.log('✅ showPanneauControle existe');
+  } catch (error) {
+    Logger.log('❌ showPanneauControle problème: ' + error.toString());
+  }
+
+  // Test 3: Vérifier fichier HTML
+  try {
+    Logger.log('Test 3: Vérification PanneauControle.html...');
+    const html = HtmlService.createHtmlOutputFromFile('PanneauControle');
+    Logger.log('✅ PanneauControle.html existe et peut être chargé');
+  } catch (error) {
+    Logger.log('❌ PanneauControle.html problème: ' + error.toString());
+  }
+
+  Logger.log('=== FIN TEST MENUS ===');
+  SpreadsheetApp.getUi().alert('Tests terminés ! Consultez les logs (View > Logs)');
 }
 
 /**************************** FONCTIONS LEGACY PIPELINE *********************************/
