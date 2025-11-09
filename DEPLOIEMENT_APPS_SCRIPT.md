@@ -1,8 +1,9 @@
 # 🚀 DÉPLOIEMENT vers Apps Script - GUIDE COMPLET
 
-## ⚠️ PROBLÈME RÉSOLU
+## ⚠️ PROBLÈMES RÉSOLUS
 
-**Le problème était :** `onOpen()` référençait des fichiers HTML manquants (Dashboard.html, Analytics.html, groupsModuleComplete.html), ce qui empêchait l'affichage des menus.
+### Problème 1 : Fichiers HTML manquants
+**Symptôme :** `onOpen()` référençait des fichiers HTML manquants (Dashboard.html, Analytics.html, groupsModuleComplete.html)
 
 **Solution appliquée :**
 - ✅ Retrait des références aux fichiers manquants
@@ -10,6 +11,17 @@
 - ✅ 3 menus fonctionnels : CONSOLE, Répartition, LEGACY
 - ✅ Fonction `testMenus()` pour diagnostic
 - ✅ Logger.log à chaque étape
+
+### Problème 2 : Déclarations en double (CRITIQUE)
+**Symptôme :** `SyntaxError: Identifier 'ERROR_CODES' has already been declared` dans Phase4_Optimisation_V15.gs:1
+**Cause :** Apps Script concatène tous les fichiers .gs dans un seul scope global. Les déclarations `const ERROR_CODES` et `function getConfig()` existaient dans Config.gs ET Phase4_Optimisation_V15.gs
+
+**Solution appliquée :**
+- ✅ Supprimé `const ERROR_CODES` de Phase4_Optimisation_V15.gs (déjà dans Config.gs)
+- ✅ Renommé `getConfig()` → `getConfig_V14Shim()` dans Phase4_Optimisation_V15.gs
+- ✅ Mis à jour tous les appels dans le fichier
+
+**Impact :** Ce bug bloquait le chargement complet du script, empêchant l'apparition de TOUS les menus dans Google Sheets
 
 ---
 
@@ -169,10 +181,19 @@ Test 3: Vérification PanneauControle.html...
 
 ---
 
-## ✅ COMMIT ACTUEL
+## ✅ COMMITS RÉCENTS
 
 **Branche :** `claude/migrate-base14-to-base15-011CUxjaabobyj7vtTao9MkT`
-**Commit :** `77277f2`
+
+### Commit b0aaf8a (DERNIER) 🔥
+**Message :** 🐛 FIX conflits déclarations - ERROR_CODES + getConfig
+
+**Modifications critiques :**
+- Supprimé déclaration `ERROR_CODES` en double dans Phase4_Optimisation_V15.gs
+- Renommé `getConfig()` → `getConfig_V14Shim()` dans Phase4_Optimisation_V15.gs
+- Résolution SyntaxError qui bloquait le chargement des menus
+
+### Commit 77277f2
 **Message :** 🔧 FIX onOpen() - Menus CONSOLE + RÉPARTITION + LEGACY
 
 **Modifications :**
