@@ -74,31 +74,58 @@ function makeCtxFromSourceSheets_() {
   const structureData = structureSheet.getDataRange().getValues();
   const headers = structureData[0];
 
-  // Détecter le format de _STRUCTURE
+  // Détecter le format de _STRUCTURE (support des 2 formats)
+  let testSheets = [];
+
+  // Format 1 : INITIALISATION (Type | Nom Classe)
   const typeIdx = headers.indexOf('Type');
   const nomClasseIdx = headers.indexOf('Nom Classe');
 
-  if (typeIdx === -1 || nomClasseIdx === -1) {
-    throw new Error('❌ Format _STRUCTURE invalide !\n\n' +
-      'Colonnes attendues : Type, Nom Classe\n' +
-      'Veuillez réinitialiser le système.');
-  }
+  if (typeIdx !== -1 && nomClasseIdx !== -1) {
+    // Format INITIALISATION détecté
+    logLine('INFO', '📋 Format _STRUCTURE détecté: INITIALISATION (Type, Nom Classe)');
 
-  // Extraire les classes TEST (destinations)
-  const testSheets = [];
-  for (let i = 1; i < structureData.length; i++) {
-    const type = String(structureData[i][typeIdx] || '').trim().toUpperCase();
-    const nomClasse = String(structureData[i][nomClasseIdx] || '').trim();
+    for (let i = 1; i < structureData.length; i++) {
+      const type = String(structureData[i][typeIdx] || '').trim().toUpperCase();
+      const nomClasse = String(structureData[i][nomClasseIdx] || '').trim();
 
-    if (type === 'TEST' && nomClasse) {
-      // Nettoyer le nom (enlever les espaces multiples)
-      const cleanName = nomClasse.replace(/\s+/g, '');
-      testSheets.push(cleanName);
+      if (type === 'TEST' && nomClasse) {
+        const cleanName = nomClasse.replace(/\s+/g, '');
+        testSheets.push(cleanName);
+      }
+    }
+  } else {
+    // Format 2 : LEGACY (CLASSE_ORIGINE | CLASSE_DEST | EFFECTIF | OPTIONS)
+    const classeDestIdx = headers.indexOf('CLASSE_DEST');
+
+    if (classeDestIdx !== -1) {
+      logLine('INFO', '📋 Format _STRUCTURE détecté: LEGACY (CLASSE_ORIGINE, CLASSE_DEST)');
+
+      const destSet = new Set();
+      for (let i = 1; i < structureData.length; i++) {
+        const dest = String(structureData[i][classeDestIdx] || '').trim();
+        if (dest) {
+          // Nettoyer et ajouter TEST au nom si pas déjà présent
+          const cleanName = dest.replace(/\s+/g, '');
+          if (cleanName && !cleanName.includes('TEST')) {
+            destSet.add(cleanName + 'TEST');
+          } else if (cleanName) {
+            destSet.add(cleanName);
+          }
+        }
+      }
+      testSheets = Array.from(destSet).sort();
+    } else {
+      throw new Error('❌ Format _STRUCTURE non reconnu !\n\n' +
+        'Formats supportés :\n' +
+        '1. INITIALISATION : Type, Nom Classe\n' +
+        '2. LEGACY : CLASSE_ORIGINE, CLASSE_DEST\n\n' +
+        'Veuillez vérifier votre onglet _STRUCTURE.');
     }
   }
 
   if (testSheets.length === 0) {
-    throw new Error('❌ Aucune classe TEST trouvée dans _STRUCTURE !\n\n' +
+    throw new Error('❌ Aucune classe TEST/destination trouvée dans _STRUCTURE !\n\n' +
       'Veuillez vérifier _STRUCTURE ou réinitialiser le système.');
   }
 
