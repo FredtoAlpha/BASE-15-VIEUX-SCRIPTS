@@ -312,11 +312,11 @@ function legacy_runFullPipeline() {
     SpreadsheetApp.getActiveSpreadsheet().toast('Lancement pipeline LEGACY...', 'En cours', -1);
 
     // Construire le contexte LEGACY
-    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
-    const ctx = typeof makeCtxFromUI_ === 'function'
-      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+    // ✅ FIX: Détection automatique des onglets sources (ECOLE1, ECOLE2, etc.)
+    const ctx = typeof makeCtxFromSourceSheets_ === 'function'
+      ? makeCtxFromSourceSheets_()
       : null;
-    if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
+    if (!ctx) throw new Error('makeCtxFromSourceSheets_() non trouvée');
 
     // Phase 1
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1/4...', 'Options & LV2', -1);
@@ -380,11 +380,11 @@ function legacy_runPhase1() {
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1 LEGACY en cours...', 'Options & LV2', -1);
 
     // Construire le contexte LEGACY
-    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
-    const ctx = typeof makeCtxFromUI_ === 'function'
-      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+    // ✅ FIX: Détection automatique des onglets sources (ECOLE1, ECOLE2, etc.)
+    const ctx = typeof makeCtxFromSourceSheets_ === 'function'
+      ? makeCtxFromSourceSheets_()
       : null;
-    if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
+    if (!ctx) throw new Error('makeCtxFromSourceSheets_() non trouvée');
 
     // Lancer Phase 1 LEGACY
     if (typeof Phase1I_dispatchOptionsLV2_ === 'function') {

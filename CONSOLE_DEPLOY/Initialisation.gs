@@ -511,6 +511,142 @@ function creerOngletStructure(niveau, nbSources, nbDest) {
 }
 
 /**
+ * Crée l'onglet ACCUEIL - Page de présentation et instructions
+ */
+function creerOngletPresentation() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const accueilSheetName = "ACCUEIL";
+  Logger.log(` - Création/MàJ ${accueilSheetName}...`);
+
+  // Supprimer l'onglet s'il existe déjà
+  let accueilSheet = ss.getSheetByName(accueilSheetName);
+  if (accueilSheet) {
+    ss.deleteSheet(accueilSheet);
+  }
+
+  // Créer un nouvel onglet ACCUEIL
+  accueilSheet = ss.insertSheet(accueilSheetName);
+
+  // Positionner l'onglet en première position
+  ss.setActiveSheet(accueilSheet);
+  ss.moveActiveSheet(1);
+
+  // Titre principal
+  accueilSheet.getRange("A1:F1").merge()
+    .setValue("🎓 SYSTÈME DE RÉPARTITION DES ÉLÈVES")
+    .setFontSize(20)
+    .setFontWeight("bold")
+    .setBackground("#4285f4")
+    .setFontColor("white")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  accueilSheet.setRowHeight(1, 50);
+
+  // Sous-titre
+  accueilSheet.getRange("A2:F2").merge()
+    .setValue("Système universel - Tous niveaux (6°, 5°, 4°, 3°)")
+    .setFontSize(12)
+    .setFontStyle("italic")
+    .setBackground("#e8f0fe")
+    .setHorizontalAlignment("center");
+  accueilSheet.setRowHeight(2, 30);
+
+  // Section Instructions
+  let row = 4;
+  accueilSheet.getRange(`A${row}:F${row}`).merge()
+    .setValue("📋 ÉTAPES D'UTILISATION")
+    .setFontSize(14)
+    .setFontWeight("bold")
+    .setBackground("#34a853")
+    .setFontColor("white")
+    .setHorizontalAlignment("center");
+  accueilSheet.setRowHeight(row, 35);
+  row++;
+
+  // Instructions détaillées
+  const instructions = [
+    ["1️⃣", "Vérifier la configuration", "Allez dans l'onglet _CONFIG pour vérifier/modifier les paramètres (niveau, options, LV2)"],
+    ["2️⃣", "Vérifier la structure", "Allez dans l'onglet _STRUCTURE pour vérifier les classes sources et destinations"],
+    ["3️⃣", "Importer les données", "Remplissez les onglets sources (ECOLE1, ECOLE2, etc.) avec les données élèves"],
+    ["4️⃣", "Lancer la répartition", "Menu CONSOLE > Pipeline LEGACY > Exécuter le pipeline complet"],
+    ["5️⃣", "Vérifier les résultats", "Consultez les onglets TEST créés pour voir la répartition proposée"]
+  ];
+
+  row++; // Ligne vide
+  for (const [emoji, titre, description] of instructions) {
+    accueilSheet.getRange(`A${row}`).setValue(emoji).setFontSize(16).setHorizontalAlignment("center");
+    accueilSheet.getRange(`B${row}`).setValue(titre).setFontWeight("bold").setFontSize(11);
+    accueilSheet.getRange(`C${row}:F${row}`).merge().setValue(description).setFontSize(10).setWrap(true);
+    accueilSheet.setRowHeight(row, 40);
+    row++;
+  }
+
+  // Section Fonctionnalités
+  row++;
+  accueilSheet.getRange(`A${row}:F${row}`).merge()
+    .setValue("⚙️ FONCTIONNALITÉS PRINCIPALES")
+    .setFontSize(14)
+    .setFontWeight("bold")
+    .setBackground("#fbbc04")
+    .setFontColor("white")
+    .setHorizontalAlignment("center");
+  accueilSheet.setRowHeight(row, 35);
+  row++;
+
+  const fonctionnalites = [
+    ["🎯", "Répartition intelligente", "Gestion des options (LATIN, GREC, CHAV, etc.) et LV2 avec quotas"],
+    ["👥", "Contraintes ASSO/DISSO", "Respect des associations et dissociations d'élèves"],
+    ["⚖️", "Équilibrage automatique", "Équilibrage des effectifs, parité H/F et scores moyens"],
+    ["📊", "Optimisation par swaps", "Algorithme d'optimisation pour améliorer la répartition"]
+  ];
+
+  row++; // Ligne vide
+  for (const [emoji, titre, description] of fonctionnalites) {
+    accueilSheet.getRange(`A${row}`).setValue(emoji).setFontSize(16).setHorizontalAlignment("center");
+    accueilSheet.getRange(`B${row}`).setValue(titre).setFontWeight("bold").setFontSize(11);
+    accueilSheet.getRange(`C${row}:F${row}`).merge().setValue(description).setFontSize(10).setWrap(true);
+    accueilSheet.setRowHeight(row, 35);
+    row++;
+  }
+
+  // Section Aide
+  row++;
+  accueilSheet.getRange(`A${row}:F${row}`).merge()
+    .setValue("❓ BESOIN D'AIDE ?")
+    .setFontSize(14)
+    .setFontWeight("bold")
+    .setBackground("#ea4335")
+    .setFontColor("white")
+    .setHorizontalAlignment("center");
+  accueilSheet.setRowHeight(row, 35);
+  row++;
+
+  row++; // Ligne vide
+  accueilSheet.getRange(`A${row}:F${row}`).merge()
+    .setValue("Consultez le menu CONSOLE pour accéder à toutes les fonctionnalités\nUtilisez _JOURNAL pour voir l'historique des actions")
+    .setFontSize(10)
+    .setFontStyle("italic")
+    .setHorizontalAlignment("center")
+    .setWrap(true);
+  accueilSheet.setRowHeight(row, 40);
+
+  // Ajuster les largeurs de colonnes
+  accueilSheet.setColumnWidth(1, 60);  // Emoji
+  accueilSheet.setColumnWidth(2, 180); // Titre
+  accueilSheet.setColumnWidths(3, 4, 150); // Description
+
+  // Ajouter des bordures pour un look professionnel
+  const lastRow = row;
+  accueilSheet.getRange(1, 1, lastRow, 6).setBorder(
+    true, true, true, true, true, true,
+    "#cccccc", SpreadsheetApp.BorderStyle.SOLID
+  );
+
+  Logger.log("Onglet ACCUEIL créé avec succès");
+  logAction("Création de l'onglet ACCUEIL (Présentation)");
+}
+
+/**
  * Détermine le préfixe des onglets sources en fonction du niveau.
  * @param {string} niveau - Niveau scolaire (6°, 5°, 4°, 3°).
  * @return {string} Le préfixe approprié.
