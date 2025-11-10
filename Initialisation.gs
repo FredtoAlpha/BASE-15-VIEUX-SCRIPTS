@@ -904,7 +904,19 @@ function protegerFeuille(sheet, description, warningOnly = false) {
     if (warningOnly) {
       protection.setWarningOnly(true);
     } else {
-       protection.addEditor(Session.getEffectiveUser());
+      // ✅ FIX: Gestion des autorisations manquantes pour Session.getEffectiveUser()
+      try {
+        protection.addEditor(Session.getEffectiveUser());
+      } catch (e) {
+        // Si l'autorisation userinfo.email n'est pas accordée, utiliser un fallback
+        try {
+          protection.addEditor(Session.getActiveUser());
+        } catch (e2) {
+          // Si aucune autorisation, passer en mode warning only
+          Logger.log(`⚠️ Impossible d'ajouter l'éditeur, passage en mode avertissement: ${e2}`);
+          protection.setWarningOnly(true);
+        }
+      }
     }
      Logger.log(`Protection (${warningOnly ? 'Avert.' : 'Complète'}) appliquée: ${sheet.getName()}`);
   } catch(e) { Logger.log(`Erreur protection ${sheet.getName()}: ${e}`);}

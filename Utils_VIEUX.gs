@@ -182,10 +182,23 @@ function getFormatColor(valeur, min, max) {
 function logAction(action) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const journalSheet = ss.getSheetByName(CONFIG.SHEETS.JOURNAL);
-  
+
   if (journalSheet) {
     const timestamp = new Date().toISOString();
-    const user = Session.getEffectiveUser().getEmail();
+
+    // ✅ FIX: Gestion des autorisations manquantes pour Session.getEffectiveUser()
+    let user = 'Utilisateur';
+    try {
+      user = Session.getEffectiveUser().getEmail();
+    } catch (e) {
+      // Si l'autorisation userinfo.email n'est pas accordée, utiliser un fallback
+      try {
+        user = Session.getActiveUser().getEmail() || 'Utilisateur';
+      } catch (e2) {
+        user = 'Utilisateur';
+      }
+    }
+
     const newRow = journalSheet.getLastRow() + 1;
     journalSheet.getRange(newRow, 1, 1, 3).setValues([[timestamp, action, user]]);
   }

@@ -255,11 +255,13 @@ function makeCtxFromUI_(options) {
   // Lire le mode source depuis options ou UI (TEST/FIN/CACHE/...)
   const modeSrc = (options && options.sourceFamily) ? String(options.sourceFamily).trim() : (readModeFromUI_() || 'TEST');
 
-  // Le target est toujours CACHE pour l'optimisation
-  const writeTarget = 'CACHE';
+  // Le target est CACHE pour l'optimisation, mais peut être personnalisé (ex: TEST pour pipeline LEGACY)
+  const writeTarget = (options && options.targetFamily) ? String(options.targetFamily).trim() : 'CACHE';
 
-  // Lire les niveaux à traiter
-  const niveaux = readNiveauxFromUI_() || ['6°1', '6°2', '6°3', '6°4', '6°5'];
+  // Lire les niveaux à traiter (dynamiquement depuis _STRUCTURE ou _CONFIG)
+  const niveaux = (typeof genererNiveauxDynamiques === 'function')
+    ? genererNiveauxDynamiques()
+    : (readNiveauxFromUI_() || ['6°1', '6°2', '6°3', '6°4', '6°5']);
 
   // ✅ Construire les noms de feuilles avec les helpers (suffixe uniquement)
   const srcSheets = makeSheetsList_(niveaux, modeSrc);     // ['6°1TEST', '6°2TEST', ...]
@@ -325,18 +327,22 @@ function readModeFromUI_() {
 }
 
 /**
- * @deprecated Cette fonction est obsolète. Utiliser buildCtx_V2() à la place.
- * @see buildCtx_V2() dans BASEOPTI_Architecture_V3.gs
- * 
+ * @deprecated Cette fonction est obsolète. Utiliser genererNiveauxDynamiques() à la place.
+ * @see genererNiveauxDynamiques() dans NiveauxDynamiques.gs
+ *
  * Lit les niveaux à traiter depuis l'interface (legacy).
- * Retourne des valeurs codées en dur.
- * 
- * ⚠️ LEGACY : Cette fonction ne lit plus l'interface réelle.
- * Les niveaux sont maintenant lus depuis _OPTI_CONFIG (colonne CLASSE).
+ * Retourne des valeurs codées en dur pour compatibilité.
+ *
+ * ⚠️ LEGACY : Cette fonction retourne des valeurs hardcodées.
+ * Les niveaux doivent maintenant être lus dynamiquement via genererNiveauxDynamiques().
  */
 function readNiveauxFromUI_() {
-  // ⚠️ LEGACY : Valeurs codées en dur
-  // Les niveaux sont maintenant lus depuis _OPTI_CONFIG
+  // ⚠️ LEGACY : Valeurs codées en dur pour compatibilité ascendante
+  // IMPORTANT : Cette fonction ne doit plus être utilisée
+  // Utiliser genererNiveauxDynamiques() pour une lecture dynamique
+  if (typeof logLine === 'function') {
+    logLine('WARN', '⚠️ readNiveauxFromUI_() est obsolète, utilisez genererNiveauxDynamiques()');
+  }
   return ['6°1', '6°2', '6°3', '6°4', '6°5'];
 }
 

@@ -25,6 +25,8 @@ function onOpen() {
       .addSeparator()
       .addItem('⚙️ Configuration Structure', 'ouvrirConfigurationStructure')
       .addItem('⚙️ Configuration Complète', 'ouvrirConfigurationComplete')
+      .addSeparator()
+      .addItem('🔓 Déverrouiller _STRUCTURE', 'deverrouillerStructure')
       .addToUi();
 
     Logger.log('Menu CONSOLE créé');
@@ -308,11 +310,14 @@ function legacy_runFullPipeline() {
   try {
     const startTime = new Date();
     SpreadsheetApp.getActiveSpreadsheet().toast('Lancement pipeline LEGACY...', 'En cours', -1);
-    
+
     // Construire le contexte LEGACY
-    const ctx = typeof makeCtxFromUI_ === 'function' ? makeCtxFromUI_() : null;
+    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
+    const ctx = typeof makeCtxFromUI_ === 'function'
+      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+      : null;
     if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
-    
+
     // Phase 1
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1/4...', 'Options & LV2', -1);
     if (typeof Phase1I_dispatchOptionsLV2_ === 'function') {
@@ -373,11 +378,14 @@ function legacy_runPhase1() {
   const ui = SpreadsheetApp.getUi();
   try {
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1 LEGACY en cours...', 'Options & LV2', -1);
-    
+
     // Construire le contexte LEGACY
-    const ctx = typeof makeCtxFromUI_ === 'function' ? makeCtxFromUI_() : null;
+    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
+    const ctx = typeof makeCtxFromUI_ === 'function'
+      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+      : null;
     if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
-    
+
     // Lancer Phase 1 LEGACY
     if (typeof Phase1I_dispatchOptionsLV2_ === 'function') {
       const result = Phase1I_dispatchOptionsLV2_(ctx);
@@ -399,10 +407,13 @@ function legacy_runPhase2() {
   const ui = SpreadsheetApp.getUi();
   try {
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 2 LEGACY en cours...', 'ASSO/DISSO', -1);
-    
-    const ctx = typeof makeCtxFromUI_ === 'function' ? makeCtxFromUI_() : null;
+
+    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
+    const ctx = typeof makeCtxFromUI_ === 'function'
+      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+      : null;
     if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
-    
+
     if (typeof Phase2I_applyDissoAsso_ === 'function') {
       const result = Phase2I_applyDissoAsso_(ctx);
       ui.alert('✅ Phase 2 Terminée', result.message || 'ASSO/DISSO appliqués dans CACHE', ui.ButtonSet.OK);
@@ -423,10 +434,13 @@ function legacy_runPhase3() {
   const ui = SpreadsheetApp.getUi();
   try {
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 3 LEGACY en cours...', 'Effectifs & Parité', -1);
-    
-    const ctx = typeof makeCtxFromUI_ === 'function' ? makeCtxFromUI_() : null;
+
+    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
+    const ctx = typeof makeCtxFromUI_ === 'function'
+      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+      : null;
     if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
-    
+
     if (typeof Phase3I_completeAndParity_ === 'function') {
       const result = Phase3I_completeAndParity_(ctx);
       ui.alert('✅ Phase 3 Terminée', result.message || 'Effectifs & Parité équilibrés dans CACHE', ui.ButtonSet.OK);
@@ -447,10 +461,13 @@ function legacy_runPhase4() {
   const ui = SpreadsheetApp.getUi();
   try {
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 4 LEGACY en cours...', 'Équilibrage Scores', -1);
-    
-    const ctx = typeof makeCtxFromUI_ === 'function' ? makeCtxFromUI_() : null;
+
+    // ✅ FIX: Lire depuis sources originales (sourceFamily: '') et écrire vers TEST (targetFamily: 'TEST')
+    const ctx = typeof makeCtxFromUI_ === 'function'
+      ? makeCtxFromUI_({ sourceFamily: '', targetFamily: 'TEST' })
+      : null;
     if (!ctx) throw new Error('makeCtxFromUI_() non trouvée');
-    
+
     if (typeof Phase4_balanceScoresSwaps_ === 'function') {
       const result = Phase4_balanceScoresSwaps_(ctx);
       ui.alert('✅ Phase 4 Terminée', result.message || 'Équilibrage scores terminé dans CACHE', ui.ButtonSet.OK);
@@ -492,6 +509,71 @@ function legacy_viewTestResults() {
     'pour lire depuis TEST.',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+/**
+ * Déverrouille complètement l'onglet _STRUCTURE
+ * Retire toutes les protections pour permettre suppression/modification
+ */
+function deverrouillerStructure() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  try {
+    // Trouver l'onglet _STRUCTURE
+    const structureSheet = ss.getSheetByName('_STRUCTURE');
+
+    if (!structureSheet) {
+      ui.alert(
+        '⚠️ Onglet introuvable',
+        'L\'onglet _STRUCTURE n\'existe pas dans ce classeur.',
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+
+    // Confirmer l'action
+    const response = ui.alert(
+      '🔓 Déverrouiller _STRUCTURE',
+      'Cette action va retirer TOUTES les protections de l\'onglet _STRUCTURE.\n\n' +
+      'Vous pourrez ensuite le modifier ou le supprimer librement.\n\n' +
+      'Continuer ?',
+      ui.ButtonSet.YES_NO
+    );
+
+    if (response !== ui.Button.YES) {
+      ui.alert('❌ Opération annulée');
+      return;
+    }
+
+    // Retirer toutes les protections
+    const protections = structureSheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    let removedCount = 0;
+
+    for (const protection of protections) {
+      protection.remove();
+      removedCount++;
+    }
+
+    // Message de confirmation
+    ui.alert(
+      '✅ _STRUCTURE Déverrouillé',
+      `${removedCount} protection(s) retirée(s).\n\n` +
+      'L\'onglet _STRUCTURE est maintenant complètement déverrouillé.\n\n' +
+      'Vous pouvez le modifier ou le supprimer.',
+      ui.ButtonSet.OK
+    );
+
+    Logger.log(`_STRUCTURE déverrouillé: ${removedCount} protections retirées`);
+
+  } catch (e) {
+    ui.alert(
+      '❌ Erreur',
+      'Erreur lors du déverrouillage :\n\n' + e.toString(),
+      ui.ButtonSet.OK
+    );
+    Logger.log('Erreur deverrouillerStructure: ' + e);
+  }
 }
 
 /**************************** CONFIGURATION LOCALE *********************************/
