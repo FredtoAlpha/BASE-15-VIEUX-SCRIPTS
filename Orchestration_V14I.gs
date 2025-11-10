@@ -21,6 +21,84 @@
  */
 
 // ===================================================================
+// FONCTION SPÉCIALE POUR PIPELINE LEGACY INITIAL
+// ===================================================================
+
+/**
+ * Détecte automatiquement les onglets sources existants (ECOLE1, 6°1, etc.)
+ * et crée un contexte pour le pipeline LEGACY initial (Sources → TEST)
+ * @return {Object} Contexte prêt pour les 4 phases LEGACY
+ */
+function makeCtxFromSourceSheets_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const allSheets = ss.getSheets();
+
+  // Détecter les onglets sources (ECOLE ou niveau sans suffixe)
+  const sourceSheets = [];
+  const sourcePattern = /^(ECOLE\d+|[3-6]°\d+)$/; // ECOLE1, 6°1, 5°1, 4°1, 3°1
+
+  for (const sheet of allSheets) {
+    const name = sheet.getName();
+    if (sourcePattern.test(name)) {
+      sourceSheets.push(name);
+    }
+  }
+
+  if (sourceSheets.length === 0) {
+    throw new Error('❌ Aucun onglet source trouvé ! Veuillez d\'abord initialiser le système (créer ECOLE1, ECOLE2, etc.)');
+  }
+
+  sourceSheets.sort();
+  logLine('INFO', `📋 Onglets sources détectés: ${sourceSheets.join(', ')}`);
+
+  // Générer les noms d'onglets TEST (destinations)
+  const testSheets = sourceSheets.map(name => {
+    // Extraire le niveau (6°, 5°, etc.)
+    const match = name.match(/([3-6]°\d+)/);
+    if (match) {
+      return match[1] + 'TEST';
+    }
+    // Si c'est ECOLE, on génère 6°X TEST
+    const matchEcole = name.match(/ECOLE(\d+)/);
+    if (matchEcole) {
+      return '6°' + matchEcole[1] + 'TEST';
+    }
+    return name + 'TEST';
+  });
+
+  logLine('INFO', `📋 Onglets TEST à créer: ${testSheets.join(', ')}`);
+
+  // Lire les quotas par classe depuis _STRUCTURE
+  const quotas = readQuotasFromUI_();
+
+  // Lire les cibles d'effectifs par classe
+  const targets = readTargetsFromUI_();
+
+  // Lire la tolérance de parité
+  const tolParite = readParityToleranceFromUI_() || 2;
+
+  // Lire le nombre max de swaps
+  const maxSwaps = readMaxSwapsFromUI_() || 500;
+
+  // Lire les autorisations de classes pour options/LV2
+  const autorisations = readClassAuthorizationsFromUI_();
+
+  return {
+    ss,
+    modeSrc: 'SOURCES',  // Mode spécial pour sources sans suffixe
+    writeTarget: 'TEST',
+    niveaux: sourceSheets,  // Les noms réels des onglets sources
+    srcSheets: sourceSheets,  // Pas de transformation, on lit directement
+    cacheSheets: testSheets,  // Les onglets TEST à créer
+    quotas,
+    targets,
+    tolParite,
+    maxSwaps,
+    autorisations
+  };
+}
+
+// ===================================================================
 // 0. UTILITAIRES DE GESTION DES ONGLETS
 // ===================================================================
 
