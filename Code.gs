@@ -25,6 +25,8 @@ function onOpen() {
       .addSeparator()
       .addItem('⚙️ Configuration Structure', 'ouvrirConfigurationStructure')
       .addItem('⚙️ Configuration Complète', 'ouvrirConfigurationComplete')
+      .addSeparator()
+      .addItem('🔓 Déverrouiller _STRUCTURE', 'deverrouillerStructure')
       .addToUi();
 
     Logger.log('Menu CONSOLE créé');
@@ -507,6 +509,71 @@ function legacy_viewTestResults() {
     'pour lire depuis TEST.',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+/**
+ * Déverrouille complètement l'onglet _STRUCTURE
+ * Retire toutes les protections pour permettre suppression/modification
+ */
+function deverrouillerStructure() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  try {
+    // Trouver l'onglet _STRUCTURE
+    const structureSheet = ss.getSheetByName('_STRUCTURE');
+
+    if (!structureSheet) {
+      ui.alert(
+        '⚠️ Onglet introuvable',
+        'L\'onglet _STRUCTURE n\'existe pas dans ce classeur.',
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+
+    // Confirmer l'action
+    const response = ui.alert(
+      '🔓 Déverrouiller _STRUCTURE',
+      'Cette action va retirer TOUTES les protections de l\'onglet _STRUCTURE.\n\n' +
+      'Vous pourrez ensuite le modifier ou le supprimer librement.\n\n' +
+      'Continuer ?',
+      ui.ButtonSet.YES_NO
+    );
+
+    if (response !== ui.Button.YES) {
+      ui.alert('❌ Opération annulée');
+      return;
+    }
+
+    // Retirer toutes les protections
+    const protections = structureSheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+    let removedCount = 0;
+
+    for (const protection of protections) {
+      protection.remove();
+      removedCount++;
+    }
+
+    // Message de confirmation
+    ui.alert(
+      '✅ _STRUCTURE Déverrouillé',
+      `${removedCount} protection(s) retirée(s).\n\n` +
+      'L\'onglet _STRUCTURE est maintenant complètement déverrouillé.\n\n' +
+      'Vous pouvez le modifier ou le supprimer.',
+      ui.ButtonSet.OK
+    );
+
+    Logger.log(`_STRUCTURE déverrouillé: ${removedCount} protections retirées`);
+
+  } catch (e) {
+    ui.alert(
+      '❌ Erreur',
+      'Erreur lors du déverrouillage :\n\n' + e.toString(),
+      ui.ButtonSet.OK
+    );
+    Logger.log('Erreur deverrouillerStructure: ' + e);
+  }
 }
 
 /**************************** CONFIGURATION LOCALE *********************************/
