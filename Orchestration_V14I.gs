@@ -25,46 +25,82 @@
 // ===================================================================
 
 /**
- * Détecte automatiquement les onglets sources existants (ECOLE1, 6°1, etc.)
+ * Détecte automatiquement les onglets sources existants (pattern : *°X)
  * et crée un contexte pour le pipeline LEGACY initial (Sources → TEST)
+ *
+ * ⚠️ NE CODE RIEN EN DUR !
+ * Les onglets sources peuvent être : BUISSON°6, MONTAIGNE°2, ECOLE°1, etc.
+ * Pattern universel : n'importe quoi se terminant par °chiffre(s)
+ *
  * @return {Object} Contexte prêt pour les 4 phases LEGACY
  */
 function makeCtxFromSourceSheets_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const allSheets = ss.getSheets();
 
-  // Détecter les onglets sources (ECOLE ou niveau sans suffixe)
+  // Détecter les onglets sources (tout ce qui se termine par °chiffre)
   const sourceSheets = [];
-  const sourcePattern = /^(ECOLE\d+|[3-6]°\d+)$/; // ECOLE1, 6°1, 5°1, 4°1, 3°1
+  const sourcePattern = /°\d+$/; // N'importe quoi suivi de °X (ex: BUISSON°6, ECOLE°1)
 
   for (const sheet of allSheets) {
     const name = sheet.getName();
-    if (sourcePattern.test(name)) {
+    // Ignorer les onglets spéciaux et ceux avec des suffixes
+    if (sourcePattern.test(name) &&
+        !name.includes('TEST') &&
+        !name.includes('CACHE') &&
+        !name.includes('DEF') &&
+        !name.includes('FIN') &&
+        !name.includes('WIP') &&
+        !name.startsWith('_')) {
       sourceSheets.push(name);
     }
   }
 
   if (sourceSheets.length === 0) {
-    throw new Error('❌ Aucun onglet source trouvé ! Veuillez d\'abord initialiser le système (créer ECOLE1, ECOLE2, etc.)');
+    throw new Error('❌ Aucun onglet source trouvé !\n\n' +
+      'Les onglets sources doivent se terminer par °X (ex: BUISSON°6, ECOLE°1).\n' +
+      'Veuillez d\'abord initialiser le système.');
   }
 
   sourceSheets.sort();
   logLine('INFO', `📋 Onglets sources détectés: ${sourceSheets.join(', ')}`);
 
-  // Générer les noms d'onglets TEST (destinations)
-  const testSheets = sourceSheets.map(name => {
-    // Extraire le niveau (6°, 5°, etc.)
-    const match = name.match(/([3-6]°\d+)/);
-    if (match) {
-      return match[1] + 'TEST';
+  // Lire _STRUCTURE pour obtenir le mapping sources → destinations
+  const structureSheet = ss.getSheetByName('_STRUCTURE');
+  if (!structureSheet) {
+    throw new Error('❌ Onglet _STRUCTURE introuvable ! Veuillez initialiser le système.');
+  }
+
+  const structureData = structureSheet.getDataRange().getValues();
+  const headers = structureData[0];
+
+  // Détecter le format de _STRUCTURE
+  const typeIdx = headers.indexOf('Type');
+  const nomClasseIdx = headers.indexOf('Nom Classe');
+
+  if (typeIdx === -1 || nomClasseIdx === -1) {
+    throw new Error('❌ Format _STRUCTURE invalide !\n\n' +
+      'Colonnes attendues : Type, Nom Classe\n' +
+      'Veuillez réinitialiser le système.');
+  }
+
+  // Extraire les classes TEST (destinations)
+  const testSheets = [];
+  for (let i = 1; i < structureData.length; i++) {
+    const type = String(structureData[i][typeIdx] || '').trim().toUpperCase();
+    const nomClasse = String(structureData[i][nomClasseIdx] || '').trim();
+
+    if (type === 'TEST' && nomClasse) {
+      // Nettoyer le nom (enlever les espaces multiples)
+      const cleanName = nomClasse.replace(/\s+/g, '');
+      testSheets.push(cleanName);
     }
-    // Si c'est ECOLE, on génère 6°X TEST
-    const matchEcole = name.match(/ECOLE(\d+)/);
-    if (matchEcole) {
-      return '6°' + matchEcole[1] + 'TEST';
-    }
-    return name + 'TEST';
-  });
+  }
+
+  if (testSheets.length === 0) {
+    throw new Error('❌ Aucune classe TEST trouvée dans _STRUCTURE !\n\n' +
+      'Veuillez vérifier _STRUCTURE ou réinitialiser le système.');
+  }
 
   logLine('INFO', `📋 Onglets TEST à créer: ${testSheets.join(', ')}`);
 
@@ -89,7 +125,7 @@ function makeCtxFromSourceSheets_() {
     writeTarget: 'TEST',
     niveaux: sourceSheets,  // Les noms réels des onglets sources
     srcSheets: sourceSheets,  // Pas de transformation, on lit directement
-    cacheSheets: testSheets,  // Les onglets TEST à créer
+    cacheSheets: testSheets,  // Les onglets TEST à créer (lus depuis _STRUCTURE)
     quotas,
     targets,
     tolParite,
