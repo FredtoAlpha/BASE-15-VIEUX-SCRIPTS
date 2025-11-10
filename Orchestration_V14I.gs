@@ -255,8 +255,8 @@ function makeCtxFromUI_(options) {
   // Lire le mode source depuis options ou UI (TEST/FIN/CACHE/...)
   const modeSrc = (options && options.sourceFamily) ? String(options.sourceFamily).trim() : (readModeFromUI_() || 'TEST');
 
-  // Le target est toujours CACHE pour l'optimisation
-  const writeTarget = 'CACHE';
+  // Le target est CACHE pour l'optimisation, mais peut être personnalisé (ex: TEST pour pipeline LEGACY)
+  const writeTarget = (options && options.targetFamily) ? String(options.targetFamily).trim() : 'CACHE';
 
   // Lire les niveaux à traiter
   const niveaux = readNiveauxFromUI_() || ['6°1', '6°2', '6°3', '6°4', '6°5'];
