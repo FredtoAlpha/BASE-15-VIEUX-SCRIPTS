@@ -1594,30 +1594,42 @@ function _wouldExceedQuotaAfterSwap_(counts, quotas, classDisplayName) {
 }
 
 function _resolveClassNamesForQuotaKey_(classKey, structureData, classesMap) {
-    const matches = [];
+    const results = [];
+    const seen = new Set();
+
+    function pushIfNew(rawName) {
+        const normalized = String(rawName || '').trim();
+        if (!normalized) return;
+        if (seen.has(normalized)) return;
+        seen.add(normalized);
+        results.push(normalized);
+    }
 
     if (structureData && Array.isArray(structureData.classes)) {
         structureData.classes.forEach(function(cls) {
             if (!cls || !cls.nom) return;
             if (_normalizeClassNameForQuotas_(cls.nom) === classKey) {
-                matches.push(cls.nom);
+                pushIfNew(cls.nom);
             }
         });
     }
 
     if (classesMap && typeof classesMap === 'object') {
         Object.keys(classesMap).forEach(function(rawName) {
-            if (_normalizeClassNameForQuotas_(rawName) === classKey && matches.indexOf(rawName) === -1) {
-                matches.push(rawName);
+            if (_normalizeClassNameForQuotas_(rawName) === classKey) {
+                pushIfNew(rawName);
             }
         });
     }
 
-    return matches;
+    return results;
 }
 
 function _logPhase4QuotaDiagnostics_(structureData, classesMap) {
-    if (typeof Logger === 'undefined' || !Logger || typeof Logger.log !== 'function') {
+    const logger = (typeof Logger !== 'undefined' && Logger && typeof Logger.log === 'function')
+        ? Logger
+        : (typeof console !== 'undefined' ? console : null);
+    if (!logger || typeof logger.log !== 'function') {
         return;
     }
 
@@ -1625,11 +1637,11 @@ function _logPhase4QuotaDiagnostics_(structureData, classesMap) {
         const quotaMap = _getQuotaMapFromStructure_(structureData);
         const quotaKeys = Object.keys(quotaMap || {});
         if (!quotaKeys.length) {
-            Logger.log('Phase4 - Diagnostic quotas: aucun quota détecté après fusion.');
+            logger.log('Phase4 - Diagnostic quotas: aucun quota détecté après fusion.');
             return;
         }
 
-        Logger.log(`Phase4 - Diagnostic quotas: ${quotaKeys.length} classes normalisées détectées.`);
+        logger.log(`Phase4 - Diagnostic quotas: ${quotaKeys.length} classes normalisées détectées.`);
         quotaKeys.forEach(function(classKey) {
             const quotas = quotaMap[classKey] || {};
             const resolvedNames = _resolveClassNamesForQuotaKey_(classKey, structureData, classesMap);
@@ -1638,11 +1650,12 @@ function _logPhase4QuotaDiagnostics_(structureData, classesMap) {
             targetNames.forEach(function(displayName) {
                 const students = _getStudentsForClass_(classesMap, displayName);
                 const counts = _countConstraintsForClass_(students, quotas);
-                Logger.log(`Phase4 - Diagnostic quotas: ${displayName} => quotas ${JSON.stringify(quotas)} | occupation ${JSON.stringify(counts)}.`);
+                logger.log(`Phase4 - Diagnostic quotas: ${displayName} => quotas ${JSON.stringify(quotas)} | occupation ${JSON.stringify(counts)}.`);
             });
         });
     } catch (err) {
-        Logger.log(`Phase4 - Diagnostic quotas: erreur lors de l'analyse (${err && err.message ? err.message : err}).`);
+        const message = err && err.message ? err.message : err;
+        logger.log(`Phase4 - Diagnostic quotas: erreur lors de l'analyse (${message}).`);
     }
 }
 
