@@ -1020,48 +1020,193 @@ function writeToCache_(ctx, baseClass, values) {
  * LIT : onglet sélectionné
  * ÉCRIT : uniquement CACHE
  */
-function Phase1I_dispatchOptionsLV2_(ctx) {
+/**
+ * Phase 1 : Dispatcher les OPTIONS (colonne OPT : CHAV, LATIN, etc.)
+ * Ces élèves deviennent FIXE et ne bougeront plus
+ * LIT : CONSOLIDATION
+ * ÉCRIT : CACHE (onglets TEST)
+ */
+function Phase1_dispatchOPTIONS_(ctx) {
   const warnings = [];
 
-  // ✅ OPTIMISATION : Lire depuis l'onglet CONSOLIDATION (regroupe tous les élèves)
-  // Plus simple et plus rapide qu'une lecture multi-sources
+  logLine('INFO', '═══════════════════════════════════════════════════════');
+  logLine('INFO', '📌 PHASE 1 : Dispatch OPTIONS (colonne OPT)');
+  logLine('INFO', '═══════════════════════════════════════════════════════');
+
+  // Lire CONSOLIDATION
   const consolidationSheet = ctx.ss.getSheetByName('CONSOLIDATION');
   if (!consolidationSheet) {
-    logLine('ERROR', 'Onglet CONSOLIDATION introuvable ! Impossible de continuer.');
-    return {
-      ok: false,
-      warnings: ['CONSOLIDATION introuvable'],
-      counts: {}
-    };
+    logLine('ERROR', 'Onglet CONSOLIDATION introuvable !');
+    return { ok: false, warnings: ['CONSOLIDATION introuvable'], counts: {} };
   }
 
   const poolGlobal = readElevesFromSheet_(consolidationSheet);
-  logLine('INFO', 'Phase 1 : Pool global de ' + poolGlobal.length + ' élèves (depuis CONSOLIDATION)');
+  logLine('INFO', '📊 Pool global : ' + poolGlobal.length + ' élèves (depuis CONSOLIDATION)');
 
-  // Créer les classes destination VIDES
+  // Marquer tous comme non-fixe
+  poolGlobal.forEach(function(e) { e.FIXE = e.FIXE || 'NON'; });
+
+  // Créer classes VIDES
   const classesState = {};
   for (const niveau of ctx.niveaux) {
     classesState[niveau] = [];
   }
 
-  // Dispatcher les élèves selon quotas LV2/OPT
-  const { stats, warn } = dispatchElevesWithQuotas_(
-    poolGlobal,
-    classesState,
-    ctx.quotas,
-    ctx.niveaux
-  );
+  const stats = {};
 
-  warnings.push(...(warn || []));
+  // Dispatcher selon quotas OPT (CHAV, LATIN, etc.)
+  for (const niveau of ctx.niveaux) {
+    const quotas = ctx.quotas[niveau] || {};
+
+    for (const optName in quotas) {
+      const quota = quotas[optName];
+
+      // ✅ SEULEMENT les OPTIONS (CHAV, LATIN, etc.)
+      // PAS les LV2 (ITA, ESP, ALL, PT)
+      if (['ITA', 'ESP', 'ALL', 'PT'].indexOf(optName.toUpperCase()) >= 0) {
+        continue; // Skip LV2, traité en Phase 2
+      }
+
+      if (quota <= 0) continue;
+
+      // Filtrer élèves avec cette OPT et non-FIXE
+      const elevesOPT = poolGlobal.filter(function(e) {
+        const opt = String(e.OPT || '').trim().toUpperCase();
+        const fixe = String(e.FIXE || '').trim().toUpperCase();
+        return opt === optName.toUpperCase() && fixe !== 'FIXE' && fixe !== 'OUI' && fixe !== 'X';
+      });
+
+      const assigned = Math.min(elevesOPT.length, quota);
+      for (let i = 0; i < assigned; i++) {
+        elevesOPT[i].FIXE = 'FIXE'; // ✅ Marquer FIXE
+        classesState[niveau].push(elevesOPT[i]);
+      }
+
+      stats[optName] = (stats[optName] || 0) + assigned;
+
+      if (assigned > 0) {
+        logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves OPT=' + optName + ' placés (FIXE)');
+      }
+      if (assigned < quota) {
+        const msg = 'Classe ' + niveau + ' : Seulement ' + assigned + '/' + quota + ' ' + optName + ' disponibles';
+        warnings.push(msg);
+        logLine('WARN', '  ⚠️ ' + msg);
+      }
+    }
+  }
 
   // Écrire dans CACHE
   writeAllClassesToCACHE_(ctx, classesState);
 
-  return {
-    ok: true,
-    warnings,
-    counts: stats
-  };
+  logLine('INFO', '✅ PHASE 1 terminée : ' + JSON.stringify(stats));
+
+  return { ok: true, warnings, counts: stats };
+}
+
+/**
+ * Phase 2 : Dispatcher les LV2 spécifiques (colonne LV2 : ITA, ALL, PT)
+ * SEULEMENT les élèves NON-FIXE (pas placés en Phase 1)
+ * LIT : CACHE (résultats Phase 1)
+ * ÉCRIT : CACHE (mise à jour)
+ */
+function Phase2_dispatchLV2_(ctx) {
+  const warnings = [];
+
+  logLine('INFO', '═══════════════════════════════════════════════════════');
+  logLine('INFO', '📌 PHASE 2 : Dispatch LV2 (colonne LV2, hors ESP)');
+  logLine('INFO', '═══════════════════════════════════════════════════════');
+
+  // Lire depuis CACHE (résultats Phase 1)
+  const classesState = readElevesFromCache_(ctx);
+
+  // Lire aussi CONSOLIDATION pour les élèves non encore placés
+  const consolidationSheet = ctx.ss.getSheetByName('CONSOLIDATION');
+  if (!consolidationSheet) {
+    logLine('ERROR', 'Onglet CONSOLIDATION introuvable !');
+    return { ok: false, warnings: ['CONSOLIDATION introuvable'], counts: {} };
+  }
+
+  const poolGlobal = readElevesFromSheet_(consolidationSheet);
+
+  const stats = {};
+
+  // Dispatcher selon quotas LV2 (ITA, ALL, PT, etc.)
+  for (const niveau of ctx.niveaux) {
+    const quotas = ctx.quotas[niveau] || {};
+
+    for (const lv2Name in quotas) {
+      const quota = quotas[lv2Name];
+
+      // ✅ SEULEMENT les LV2 (ITA, ALL, PT, etc.)
+      // PAS ESP (langue par défaut)
+      // PAS les OPTIONS (CHAV, LATIN, etc.)
+      const lv2Upper = lv2Name.toUpperCase();
+      if (['CHAV', 'LATIN'].indexOf(lv2Upper) >= 0) {
+        continue; // Skip OPTIONS, déjà traité en Phase 1
+      }
+      if (lv2Upper === 'ESP') {
+        continue; // Skip ESP (langue par défaut)
+      }
+
+      if (quota <= 0) continue;
+
+      // Filtrer élèves avec cette LV2 et NON-FIXE
+      const elevesLV2 = poolGlobal.filter(function(e) {
+        const lv2 = String(e.LV2 || '').trim().toUpperCase();
+        const fixe = String(e.FIXE || '').trim().toUpperCase();
+        return lv2 === lv2Upper && fixe !== 'FIXE' && fixe !== 'OUI' && fixe !== 'X';
+      });
+
+      // Calculer combien on peut encore placer dans cette classe
+      const currentCount = (classesState[niveau] || []).length;
+      const remaining = quota - elevesLV2.filter(function(e) {
+        // Compter ceux déjà dans cette classe
+        return (classesState[niveau] || []).some(function(existing) {
+          return existing.NOM === e.NOM; // Comparer par NOM (ou autre clé unique)
+        });
+      }).length;
+
+      const toPlace = Math.min(elevesLV2.length, remaining);
+
+      let placed = 0;
+      for (let i = 0; i < elevesLV2.length && placed < toPlace; i++) {
+        const eleve = elevesLV2[i];
+
+        // Vérifier que pas déjà dans une classe
+        let alreadyPlaced = false;
+        for (const cls in classesState) {
+          if ((classesState[cls] || []).some(function(e) { return e.NOM === eleve.NOM; })) {
+            alreadyPlaced = true;
+            break;
+          }
+        }
+
+        if (!alreadyPlaced) {
+          eleve.FIXE = 'FIXE'; // ✅ Marquer FIXE
+          classesState[niveau].push(eleve);
+          placed++;
+        }
+      }
+
+      stats[lv2Name] = (stats[lv2Name] || 0) + placed;
+
+      if (placed > 0) {
+        logLine('INFO', '  ✅ ' + niveau + ' : ' + placed + ' élèves LV2=' + lv2Name + ' placés (FIXE)');
+      }
+      if (placed < quota) {
+        const msg = 'Classe ' + niveau + ' : Seulement ' + placed + '/' + quota + ' ' + lv2Name + ' disponibles (non-FIXE)';
+        warnings.push(msg);
+        logLine('WARN', '  ⚠️ ' + msg);
+      }
+    }
+  }
+
+  // Écrire dans CACHE
+  writeAllClassesToCACHE_(ctx, classesState);
+
+  logLine('INFO', '✅ PHASE 2 terminée : ' + JSON.stringify(stats));
+
+  return { ok: true, warnings, counts: stats };
 }
 
 /**
