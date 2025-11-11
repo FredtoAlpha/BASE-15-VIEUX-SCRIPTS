@@ -326,32 +326,40 @@ function legacy_runFullPipeline() {
       throw new Error('initEmptyCacheTabs_() non trouvée');
     }
 
-    // Phase 1
-    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1/4...', 'Options & LV2', -1);
-    if (typeof Phase1I_dispatchOptionsLV2_ === 'function') {
-      Phase1I_dispatchOptionsLV2_(ctx);
+    // ✅ v11: Phase 1 = OPTIONS (colonne OPT)
+    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1/5...', 'OPTIONS (CHAV, LATIN)', -1);
+    if (typeof Phase1_dispatchOPTIONS_ === 'function') {
+      Phase1_dispatchOPTIONS_(ctx);
     } else {
-      throw new Error('Phase1I_dispatchOptionsLV2_() non trouvée');
+      throw new Error('Phase1_dispatchOPTIONS_() non trouvée');
     }
-    
-    // Phase 2
-    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 2/4...', 'ASSO/DISSO', -1);
+
+    // ✅ v11: Phase 2 = LV2 spécifiques (colonne LV2, hors ESP)
+    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 2/5...', 'LV2 (ITA, ALL, PT)', -1);
+    if (typeof Phase2_dispatchLV2_ === 'function') {
+      Phase2_dispatchLV2_(ctx);
+    } else {
+      throw new Error('Phase2_dispatchLV2_() non trouvée');
+    }
+
+    // Phase 3 = ASSO/DISSO (ancienne Phase 2)
+    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 3/5...', 'ASSO/DISSO', -1);
     if (typeof Phase2I_applyDissoAsso_ === 'function') {
       Phase2I_applyDissoAsso_(ctx);
     } else {
       throw new Error('Phase2I_applyDissoAsso_() non trouvée');
     }
-    
-    // Phase 3
-    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 3/4...', 'Effectifs & Parité', -1);
+
+    // Phase 4 = Effectifs & Parité (ancienne Phase 3)
+    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 4/5...', 'Effectifs & Parité', -1);
     if (typeof Phase3I_completeAndParity_ === 'function') {
       Phase3I_completeAndParity_(ctx);
     } else {
       throw new Error('Phase3I_completeAndParity_() non trouvée');
     }
-    
-    // Phase 4
-    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 4/4...', 'Équilibrage Scores', -1);
+
+    // Phase 5 = Swaps (ancienne Phase 4)
+    SpreadsheetApp.getActiveSpreadsheet().toast('Phase 5/5...', 'Équilibrage Scores', -1);
     if (typeof Phase4_balanceScoresSwaps_ === 'function') {
       Phase4_balanceScoresSwaps_(ctx);
     } else {
