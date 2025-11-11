@@ -15,13 +15,47 @@
 // ===================================================================
 
 /**
- * Phase 1 V3 : Place les élèves avec OPT/LV2 selon quotas
+ * ✅ V12 : Phase 1 avec gestion multi-contraintes
+ *
+ * PROBLÈME RÉSOLU :
+ * Avant V12, un élève avec ITA (LV2) ET LATIN (OPT) était placé pour ITA,
+ * marqué comme "assigned", puis IGNORÉ lors du traitement du quota LATIN.
+ * Résultat : Il ne comptait que pour UN seul quota au lieu de DEUX.
+ *
+ * SOLUTION V12 - PASSES SUCCESSIVES :
+ *   1. PASS 1 : Traite TOUS les quotas OPT (CHAV, LATIN, etc.)
+ *      → Place les élèves ayant ces OPT
+ *      → Marque _CLASS_ASSIGNED
+ *
+ *   2. PASS 2 : Traite TOUS les quotas LV2 (ITA, ALL, PT, etc.)
+ *      → COMPTE combien d'élèves DÉJÀ PLACÉS ont cette LV2
+ *      → Calcule quota restant = quota cible - déjà placés
+ *      → Place UNIQUEMENT le nombre d'élèves manquants
+ *
+ * EXEMPLE :
+ * Classe 5°5 : ITA=8, LATIN=8
+ * Élèves disponibles :
+ *   - 2 élèves ITA seul
+ *   - 11 élèves LATIN seul
+ *   - 6 élèves ITA+LATIN (MULTI-CONTRAINTE)
+ *
+ * PASS 1 (OPT) :
+ *   → Placer 8 LATIN : 6 ITA+LATIN + 2 LATIN seul = 8/8 ✓
+ *
+ * PASS 2 (LV2) :
+ *   → Compter ITA déjà placés : 6 élèves (ceux avec ITA+LATIN)
+ *   → Quota ITA restant : 8 - 6 = 2
+ *   → Placer 2 ITA seul supplémentaires = 8/8 ✓
+ *
+ * RÉSULTAT : 10 élèves placés (6 ITA+LATIN + 2 ITA seul + 2 LATIN seul)
+ *            Quotas ITA=8 et LATIN=8 tous deux satisfaits !
+ *
  * LIT : _BASEOPTI (colonne _CLASS_ASSIGNED vide)
  * ÉCRIT : _BASEOPTI (remplit _CLASS_ASSIGNED)
  */
 function Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx) {
   logLine('INFO', '='.repeat(80));
-  logLine('INFO', '📌 PHASE 1 V3 - Options & LV2 (depuis _BASEOPTI)');
+  logLine('INFO', '📌 PHASE 1 V12 - Options & LV2 (MULTI-CONTRAINTES)');
   logLine('INFO', '='.repeat(80));
 
   const ss = ctx.ss || SpreadsheetApp.getActive();
@@ -37,16 +71,63 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx) {
   const idxLV2 = headers.indexOf('LV2');
   const idxOPT = headers.indexOf('OPT');
   const idxAssigned = headers.indexOf('_CLASS_ASSIGNED');
+  const idxNom = headers.indexOf('NOM');
 
   if (idxAssigned === -1) {
     throw new Error('Colonne _CLASS_ASSIGNED manquante');
   }
 
-  const stats = {};
+  // ✅ Analyser les multi-contraintes AVANT traitement
+  logLine('INFO', '🔍 Analyse des contraintes multiples...');
+  const analysis = analyzeMultiConstraints_('_BASEOPTI');
 
-  // Parcourir les quotas par classe
+  // ✅ Détecter dynamiquement quelles contraintes sont OPT et lesquelles sont LV2
+  const allOPTValues = new Set();
+  const allLV2Values = new Set();
+
+  for (let i = 1; i < data.length; i++) {
+    const opt = idxOPT >= 0 ? String(data[i][idxOPT] || '').trim().toUpperCase() : '';
+    const lv2 = idxLV2 >= 0 ? String(data[i][idxLV2] || '').trim().toUpperCase() : '';
+
+    if (opt) allOPTValues.add(opt);
+    if (lv2 && lv2 !== 'ESP') allLV2Values.add(lv2);
+  }
+
+  logLine('INFO', '📊 OPT détectées: ' + Array.from(allOPTValues).join(', '));
+  logLine('INFO', '📊 LV2 détectées: ' + Array.from(allLV2Values).join(', '));
+
+  // ✅ Séparer les quotas en OPT et LV2
+  const optQuotas = {}; // { '5°5': { 'CHAV': 10, 'LATIN': 8 }, ... }
+  const lv2Quotas = {}; // { '5°5': { 'ITA': 8, 'ALL': 2 }, ... }
+
   for (const classe in (ctx.quotas || {})) {
+    optQuotas[classe] = {};
+    lv2Quotas[classe] = {};
+
     const quotas = ctx.quotas[classe];
+    for (const constraintName in quotas) {
+      if (allLV2Values.has(constraintName)) {
+        lv2Quotas[classe][constraintName] = quotas[constraintName];
+      } else if (allOPTValues.has(constraintName)) {
+        optQuotas[classe][constraintName] = quotas[constraintName];
+      } else {
+        // Par défaut, si on ne sait pas, on considère que c'est OPT
+        optQuotas[classe][constraintName] = quotas[constraintName];
+      }
+    }
+  }
+
+  const stats = { opt: {}, lv2: {} };
+
+  // ===================================================================
+  // PASS 1 : TRAITER LES QUOTAS OPT (CHAV, LATIN, etc.)
+  // ===================================================================
+  logLine('INFO', '');
+  logLine('INFO', '🎯 PASS 1 : Traitement des OPTIONS');
+  logLine('INFO', '-'.repeat(80));
+
+  for (const classe in optQuotas) {
+    const quotas = optQuotas[classe];
 
     for (const optName in quotas) {
       const quota = quotas[optName];
@@ -61,28 +142,85 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx) {
         const row = data[i];
         const assigned = String(row[idxAssigned] || '').trim();
 
-        if (assigned) continue; // Déjà placé
+        if (assigned) continue; // Déjà placé dans cette passe
 
-        const lv2 = String(row[idxLV2] || '').trim().toUpperCase();
-        const opt = String(row[idxOPT] || '').trim().toUpperCase();
+        const opt = idxOPT >= 0 ? String(row[idxOPT] || '').trim().toUpperCase() : '';
 
-        let match = false;
-        if (['ITA', 'ESP', 'ALL', 'PT'].indexOf(optName) >= 0) {
-          match = (lv2 === optName);
-        } else {
-          match = (opt === optName);
-        }
-
-        if (match) {
-          // ✅ PLACER SANS VÉRIFIER DISSO : LV2/OPT = RÈGLE ABSOLUE
+        if (opt === optName) {
           data[i][idxAssigned] = classe;
           placed++;
-          stats[optName] = (stats[optName] || 0) + 1;
+          stats.opt[optName] = (stats.opt[optName] || 0) + 1;
         }
       }
 
       if (placed > 0) {
-        logLine('INFO', '  ✅ ' + classe + ' : ' + placed + ' × ' + optName + (placed < quota ? ' (⚠️ quota=' + quota + ')' : ''));
+        logLine('INFO', '  ✅ ' + classe + ' : ' + placed + '/' + quota + ' × ' + optName);
+      } else if (quota > 0) {
+        logLine('WARN', '  ⚠️ ' + classe + ' : 0/' + quota + ' × ' + optName + ' (aucun élève disponible)');
+      }
+    }
+  }
+
+  // ===================================================================
+  // PASS 2 : TRAITER LES QUOTAS LV2 (ITA, ALL, PT, etc.)
+  // En comptant les élèves DÉJÀ PLACÉS qui ont cette LV2
+  // ===================================================================
+  logLine('INFO', '');
+  logLine('INFO', '🎯 PASS 2 : Traitement des LV2 (avec comptage des déjà placés)');
+  logLine('INFO', '-'.repeat(80));
+
+  for (const classe in lv2Quotas) {
+    const quotas = lv2Quotas[classe];
+
+    for (const lv2Name in quotas) {
+      const quotaTarget = quotas[lv2Name];
+      if (quotaTarget <= 0) continue;
+
+      // ✅ COMPTER combien d'élèves déjà placés dans cette classe ont cette LV2
+      let alreadyPlacedWithLV2 = 0;
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const assigned = String(row[idxAssigned] || '').trim();
+        const lv2 = idxLV2 >= 0 ? String(row[idxLV2] || '').trim().toUpperCase() : '';
+
+        if (assigned === classe && lv2 === lv2Name) {
+          alreadyPlacedWithLV2++;
+        }
+      }
+
+      // ✅ Calculer combien il faut ENCORE placer
+      const remaining = quotaTarget - alreadyPlacedWithLV2;
+
+      if (remaining <= 0) {
+        logLine('INFO', '  ✅ ' + classe + ' : ' + lv2Name + ' quota déjà satisfait (' + alreadyPlacedWithLV2 + '/' + quotaTarget + ')');
+        continue;
+      }
+
+      // ✅ Placer les élèves manquants
+      let placed = 0;
+      for (let i = 1; i < data.length; i++) {
+        if (placed >= remaining) break;
+
+        const row = data[i];
+        const assigned = String(row[idxAssigned] || '').trim();
+
+        if (assigned) continue; // Déjà placé
+
+        const lv2 = idxLV2 >= 0 ? String(row[idxLV2] || '').trim().toUpperCase() : '';
+
+        if (lv2 === lv2Name) {
+          data[i][idxAssigned] = classe;
+          placed++;
+          stats.lv2[lv2Name] = (stats.lv2[lv2Name] || 0) + 1;
+        }
+      }
+
+      const total = alreadyPlacedWithLV2 + placed;
+      if (total > 0) {
+        logLine('INFO', '  ✅ ' + classe + ' : ' + total + '/' + quotaTarget + ' × ' + lv2Name +
+                ' (dont ' + alreadyPlacedWithLV2 + ' déjà placés + ' + placed + ' nouveaux)');
+      } else if (quotaTarget > 0) {
+        logLine('WARN', '  ⚠️ ' + classe + ' : 0/' + quotaTarget + ' × ' + lv2Name + ' (aucun élève disponible)');
       }
     }
   }
@@ -105,9 +243,11 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx) {
     logLine('WARN', '⚠️ computeMobilityFlags_ non disponible (vérifier que Mobility_System.gs est chargé)');
   }
 
-  logLine('INFO', '✅ PHASE 1 V3 terminée');
+  logLine('INFO', '');
+  logLine('INFO', '✅ PHASE 1 V12 terminée - Multi-contraintes gérées !');
+  logLine('INFO', '='.repeat(80));
 
-  return { ok: true, counts: stats };
+  return { ok: true, counts: stats, analysis: analysis };
 }
 
 // ===================================================================
