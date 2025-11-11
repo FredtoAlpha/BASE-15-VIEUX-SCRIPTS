@@ -53,41 +53,48 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
     throw new Error('Colonne _CLASS_ASSIGNED manquante');
   }
 
-  // ✅ V15 : Charger la matrice de capacités
-  logLine('INFO', '🔍 Chargement de la configuration des capacités...');
-  let capabilities = loadClassCapabilities_();
+  // ✅ V15 : Lire les capacités depuis _STRUCTURE (colonne OPTIONS)
+  logLine('INFO', '🔍 Lecture des capacités depuis _STRUCTURE...');
 
-  if (!capabilities) {
-    logLine('WARN', '⚠️ Aucune configuration de capacités trouvée - Auto-génération depuis les quotas');
+  const capabilities = {};
+  const structureSheet = ss.getSheetByName('_STRUCTURE');
 
-    // ✅ V15 FALLBACK : Auto-détecter les capacités depuis les quotas
-    // Logique : Si une classe a un quota pour une option, elle offre cette option
-    capabilities = {};
+  if (!structureSheet) {
+    throw new Error('_STRUCTURE introuvable');
+  }
 
-    for (const classe in (ctx.quotas || {})) {
-      capabilities[classe] = {};
+  const structData = structureSheet.getDataRange().getValues();
+  const structHeaders = structData[0];
+  const idxClasseDest = structHeaders.indexOf('CLASSE_DEST');
+  const idxOptions = structHeaders.indexOf('OPTIONS');
 
-      // Collecter toutes les options possibles
-      const allOptions = new Set();
-      for (const cls in (ctx.quotas || {})) {
-        for (const opt in ctx.quotas[cls]) {
-          allOptions.add(opt);
+  if (idxClasseDest === -1 || idxOptions === -1) {
+    throw new Error('Colonnes CLASSE_DEST ou OPTIONS manquantes dans _STRUCTURE');
+  }
+
+  // Parser chaque ligne de _STRUCTURE
+  for (let i = 1; i < structData.length; i++) {
+    const classe = String(structData[i][idxClasseDest] || '').trim();
+    const optionsStr = String(structData[i][idxOptions] || '').trim();
+
+    if (!classe) continue;
+
+    capabilities[classe] = {};
+
+    // Parser "ITA=6,CHAV=7,LATIN=3"
+    if (optionsStr) {
+      const parts = optionsStr.split(',');
+      for (const part of parts) {
+        const match = part.trim().match(/^([A-Z]+)=/);
+        if (match) {
+          const optName = match[1];
+          capabilities[classe][optName] = true;
         }
       }
-
-      // Pour cette classe, marquer comme true les options qu'elle a en quota
-      for (const opt of allOptions) {
-        const hasQuota = ctx.quotas[classe][opt] && ctx.quotas[classe][opt] > 0;
-        capabilities[classe][opt] = hasQuota;
-      }
     }
-
-    logLine('INFO', '✅ Capacités auto-générées pour ' + Object.keys(capabilities).length + ' classe(s)');
-    logLine('INFO', '   💡 Logique: classe avec quota ITA=6 → offre ITA');
-    logLine('INFO', '   💡 Utilisez l\'UI OPTI pour personnaliser si nécessaire');
-  } else {
-    logLine('INFO', '✅ Capacités chargées pour ' + Object.keys(capabilities).length + ' classe(s)');
   }
+
+  logLine('INFO', '✅ Capacités lues depuis _STRUCTURE pour ' + Object.keys(capabilities).length + ' classe(s)');
 
   // Afficher la configuration pour debug
   for (const classe in capabilities) {
