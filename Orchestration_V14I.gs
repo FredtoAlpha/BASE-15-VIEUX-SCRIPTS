@@ -224,15 +224,15 @@ function runOptimizationV14FullI(options) {
     }
     logLine('INFO', '✅ INIT V3 terminé : ' + initResult.total + ' élèves dans _BASEOPTI');
 
-    // ===== PHASE 1 V3 : Options & LV2 (depuis _BASEOPTI) =====
-    logLine('INFO', '\n📌 PHASE 1 V3 : Affectation Options & LV2 (depuis _BASEOPTI)...');
-    const p1 = Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx);
+    // ===== PHASE 1 V4 : Options & LV2 avec multi-contraintes (depuis _BASEOPTI) =====
+    logLine('INFO', '\n📌 PHASE 1 V4 : Affectation Options & LV2 avec multi-contraintes (depuis _BASEOPTI)...');
+    const p1 = Phase1_MultiConstraints_V4(ctx);
 
-    phasesOut.push(tagPhase_('Phase 1 V3 - Options/LV2', p1));
-    announcePhaseDone_('Phase 1 V3 (Options/LV2) écrite dans _BASEOPTI + CACHE');
+    phasesOut.push(tagPhase_('Phase 1 V4 - Options/LV2 multi-contraintes', p1));
+    announcePhaseDone_('Phase 1 V4 (Options/LV2 multi-contraintes) écrite dans _BASEOPTI + CACHE');
     forceCacheInUIAndReload_(ctx);
     ok = ok && p1.ok;
-    logLine('INFO', '✅ Phase 1 V3 terminée : ' + (p1.counts ? JSON.stringify(p1.counts) : 'OK'));
+    logLine('INFO', '✅ Phase 1 V4 terminée : ' + (p1.counts ? JSON.stringify(p1.counts) : 'OK'));
 
     // ===== PHASE 2 V3 : DISSO/ASSO (depuis _BASEOPTI) =====
     logLine('INFO', '\n📌 PHASE 2 V3 : Application codes DISSO/ASSO (depuis _BASEOPTI)...');

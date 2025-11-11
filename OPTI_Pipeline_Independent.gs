@@ -99,7 +99,7 @@ function runOptimizationOPTI(options) {
 
     // ===== PHASE 1 : OPTIONS & LV2 =====
     logLine('INFO', '\n📌 PHASE 1 : Options & LV2...');
-    const p1 = Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx);
+    const p1 = Phase1_MultiConstraints_V4(ctx);
     phasesOut.push({ phase: 'Phase 1', ok: p1.ok, counts: p1.counts });
     ok = ok && p1.ok;
     logLine('INFO', '✅ Phase 1 terminée : ' + JSON.stringify(p1.counts || {}));
