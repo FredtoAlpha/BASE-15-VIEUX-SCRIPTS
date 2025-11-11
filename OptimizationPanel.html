@@ -26,14 +26,14 @@ function gs(fn, ...args) {
 const tick = (ms = 80) => new Promise(r => setTimeout(r, ms));
 
 /**
- * Met à jour le statut dans l'UI
+ * ✅ V12 : Met à jour le statut dans l'UI avec spinner visible
  */
 function setStreamingStatus(msg, phase = '') {
   console.log(msg);
-  
+
   const statusEl = document.getElementById('live-status');
   if (statusEl) statusEl.textContent = msg;
-  
+
   const logsEl = document.getElementById('live-logs');
   if (logsEl) {
     const logLine = document.createElement('div');
@@ -42,10 +42,25 @@ function setStreamingStatus(msg, phase = '') {
     logsEl.appendChild(logLine);
     logsEl.scrollTop = logsEl.scrollHeight;
   }
-  
+
   const btn = document.getElementById('btnRunOptimization');
   if (btn && phase) {
     btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>${phase}`;
+  }
+
+  // ✅ V12 : Afficher le spinner et mettre à jour son contenu
+  const spinner = document.getElementById('optimization-spinner');
+  const spinnerStatus = document.getElementById('spinner-status');
+  const spinnerDetail = document.getElementById('spinner-detail');
+
+  if (spinner && phase) {
+    // Afficher le spinner si une phase est fournie
+    spinner.classList.remove('hidden');
+    if (spinnerStatus) spinnerStatus.textContent = phase;
+    if (spinnerDetail) spinnerDetail.textContent = msg;
+  } else if (spinner && !phase) {
+    // Cacher le spinner si pas de phase (fin du traitement)
+    spinner.classList.add('hidden');
   }
 }
 
@@ -289,6 +304,21 @@ const OptimizationPanel = {
                 <i class="fas fa-broadcast-tower text-blue-600 text-base"></i>
                 <span class="font-semibold text-sm text-blue-800">Mode Direct Live</span>
               </div>
+
+              <!-- ✅ V12 : Spinner visible pendant le traitement -->
+              <div id="optimization-spinner" class="hidden flex items-center gap-3 mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div class="flex-shrink-0">
+                  <svg class="animate-spin h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <div id="spinner-status" class="text-sm font-semibold text-blue-900">Traitement en cours...</div>
+                  <div id="spinner-detail" class="text-xs text-blue-700 mt-0.5">Initialisation...</div>
+                </div>
+              </div>
+
               <div id="live-status" class="text-sm text-blue-700 mb-2 font-medium">
                 Prêt
               </div>
