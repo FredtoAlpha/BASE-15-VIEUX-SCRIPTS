@@ -2,15 +2,37 @@
  * ===================================================================
  * UTILITAIRES DE PARSING/FORMATAGE DES QUOTAS
  * ===================================================================
- * 
+ *
  * Fonctions partagées entre OPTI et LEGACY pour garantir
  * la cohérence du format OPTIONS dans _STRUCTURE
  */
 
 /**
+ * ✅ Normalise un tag d'option ou LV2 (copie depuis OptiConfig_System.gs)
+ * Voir normalizeOptionTag_() dans OptiConfig_System.gs pour documentation complète
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let tag = String(raw).trim().toUpperCase();
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+  tag = tag.replace(/\(.*?\)/g, '');
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, '');
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+  const synonyms = {
+    'ITALIEN': 'ITA', 'ITALIE': 'ITA', 'ESPAGNOL': 'ESP', 'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL', 'ALLEMAGNE': 'ALL', 'CHINOIS': 'CHI', 'CHINE': 'CHI',
+    'LATIN': 'LAT', 'GREC': 'GRE', 'PORTUGUAIS': 'PT', 'PORTUGAL': 'PT',
+    'CHEVAL': 'CHAV'
+  };
+  return synonyms[tag] || tag;
+}
+
+/**
  * Formate les quotas au format standard pour _STRUCTURE
  * @param {Object} quotas - { "ITA": 6, "CHAV": 10, "ESP": 5 }
  * @returns {string} - "ITA=6,CHAV=10,ESP=5" (sans espaces)
+ * ✅ CORRECTION NORMALISATION : Les clés sont déjà normalisées en entrée
  */
 function formatQuotasToString_(quotas) {
   if (!quotas || typeof quotas !== 'object') {
@@ -30,37 +52,40 @@ function formatQuotasToString_(quotas) {
 
 /**
  * Parse une chaîne OPTIONS depuis _STRUCTURE
- * @param {string} optionsStr - "ITA=6,CHAV=10,ESP=5" ou "ITA=6, CHAV=10" (tolère espaces)
- * @returns {Object} - { "ITA": 6, "CHAV": 10, "ESP": 5 }
+ * @param {string} optionsStr - "ITA=6,CHAV 2=10,ESP=5" ou "ITA=6, CHAV 2=10" (tolère espaces et suffixes numériques)
+ * @returns {Object} - { "ITA": 6, "CHAV": 10, "ESP": 5 } (clés normalisées)
+ * ✅ CORRECTION NORMALISATION : Applique normalizeOptionTag_() pour cohérence avec élèves
  */
 function parseQuotasFromString_(optionsStr) {
   const quotas = {};
-  
+
   if (!optionsStr || typeof optionsStr !== 'string') {
     return quotas;
   }
-  
+
   // Split par virgule
   const pairs = optionsStr.split(',');
-  
+
   pairs.forEach(function(pair) {
     // Trim pour enlever les espaces
     const trimmedPair = pair.trim();
     if (!trimmedPair) return;
-    
+
     // Split par =
     const parts = trimmedPair.split('=');
     if (parts.length !== 2) return;
-    
-    // Extraire clé et valeur
-    const key = parts[0].trim().toUpperCase();
+
+    // Extraire clé et valeur avec NORMALISATION
+    const rawKey = parts[0].trim();
+    const normalizedKey = normalizeOptionTag_(rawKey); // ✅ NORMALISATION (CHAV 2 → CHAV)
     const value = parseInt(parts[1].trim()) || 0;
-    
-    if (key && value > 0) {
-      quotas[key] = value;
+
+    if (normalizedKey && value > 0) {
+      // ✅ Additionner si plusieurs quotas se normalisent vers la même clé (CHAV 1=5, CHAV 2=2 → CHAV=7)
+      quotas[normalizedKey] = (quotas[normalizedKey] || 0) + value;
     }
   });
-  
+
   return quotas;
 }
 

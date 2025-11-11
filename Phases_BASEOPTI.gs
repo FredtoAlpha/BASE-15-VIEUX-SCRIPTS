@@ -428,9 +428,38 @@ function Phase3I_completeAndParity_BASEOPTI(ctx) {
   const free = baseGetFree_();
   logLine('INFO', '🔍 Élèves disponibles : ' + free.length);
 
+  // ✅ V16 SÉCURITÉ : Filtrer les élèves avec contraintes fortes (OPT/LV2)
+  // Ces élèves DOIVENT avoir été placés en Phase 1, si encore libres = ALERTE
+  const freeFiltered = [];
+  const constrainedStudents = [];
+
+  free.forEach(function(s) {
+    const opt = normalizeOptionTag_(String(s.OPT || ''));
+    const lv2 = normalizeOptionTag_(String(s.LV2 || ''));
+
+    if (opt || lv2) {
+      // Élève avec contrainte OPT/LV2 encore libre = PROBLÈME
+      constrainedStudents.push(s);
+      logLine('WARN', '⚠️ PHASE 3 : Élève avec contrainte encore libre : ' +
+              (s.NOM || 'inconnu') + ' (OPT=' + opt + ', LV2=' + lv2 + ')');
+    } else {
+      // Élève sans contrainte forte = OK pour Phase 3
+      freeFiltered.push(s);
+    }
+  });
+
+  if (constrainedStudents.length > 0) {
+    logLine('ERROR', '❌ ' + constrainedStudents.length + ' élèves avec OPT/LV2 non placés en Phase 1 !');
+    logLine('ERROR', '   Vérifier quotas _STRUCTURE et capacité des classes.');
+  }
+
+  // ✅ Remplacer free par freeFiltered pour la suite
+  const freeForPhase3 = freeFiltered;
+  logLine('INFO', '🔍 Élèves éligibles Phase 3 (sans OPT/LV2) : ' + freeForPhase3.length);
+
   // ✅ ÉTAPE 1 : Traiter les groupes A restants (non placés en Phase 2)
   const groupsA = {};
-  free.forEach(function(s) {
+  freeForPhase3.forEach(function(s) {
     const codeA = String(s.A || '').trim().toUpperCase();
     if (codeA) {
       if (!groupsA[codeA]) groupsA[codeA] = [];
@@ -447,10 +476,10 @@ function Phase3I_completeAndParity_BASEOPTI(ctx) {
       baseMarkPlaced_(grpsIds_(grp), 'P3', targetClass);
       logLine('INFO', '  🔗 Groupe A=' + code + ' placé ensemble dans ' + targetClass + ' (' + grp.length + ' élèves)');
 
-      // Retirer du pool free
+      // Retirer du pool freeForPhase3
       grp.forEach(function(s) {
-        const idx = free.findIndex(function(f) { return f._ID === s._ID; });
-        if (idx >= 0) free.splice(idx, 1);
+        const idx = freeForPhase3.findIndex(function(f) { return f._ID === s._ID; });
+        if (idx >= 0) freeForPhase3.splice(idx, 1);
       });
     }
   }
@@ -467,11 +496,11 @@ function Phase3I_completeAndParity_BASEOPTI(ctx) {
   }
 
   // ✅ ÉTAPE 2 : Créer des pools F et M (recalculés après placement groupes A)
-  let poolF = free.filter(function(s) {
+  let poolF = freeForPhase3.filter(function(s) {
     return String(s.SEXE || '').toUpperCase() === 'F';
   });
 
-  let poolM = free.filter(function(s) {
+  let poolM = freeForPhase3.filter(function(s) {
     return String(s.SEXE || '').toUpperCase() === 'M';
   });
 
@@ -551,6 +580,32 @@ function Phase3I_completeAndParity_BASEOPTI(ctx) {
   // ✅ Snapshot final après complétion
   const needsFinal = getClassNeedsFromCache_(ctx);
   _dumpClassNeeds_(needsFinal, '📊 État final');
+
+  // ✅ V16 TOLÉRANCE PARITÉ : Vérifier et corriger si hors tolérance
+  logLine('INFO', '🔍 Vérification de la tolérance de parité...');
+  const parityTolerance = ctx.tolParite || 2;
+  let parityViolations = 0;
+
+  for (const classe in (ctx.levels || [])) {
+    const cls = ctx.levels[classe];
+    const parity = getCurrentParity_(ctx, cls);
+    const delta = Math.abs(parity.F - parity.M);
+
+    if (delta > parityTolerance) {
+      parityViolations++;
+      logLine('WARN', '⚠️ ' + cls + ' : Parité hors tolérance ! (' + parity.F + 'F / ' + parity.M + 'M, écart=' + delta + ' > ' + parityTolerance + ')');
+      logLine('WARN', '   Action recommandée : Vérifier effectifs cibles ou augmenter tolérance.');
+    } else {
+      logLine('INFO', '  ✅ ' + cls + ' : Parité OK (' + parity.F + 'F / ' + parity.M + 'M, écart=' + delta + ')');
+    }
+  }
+
+  if (parityViolations > 0) {
+    logLine('ERROR', '❌ ' + parityViolations + ' classe(s) hors tolérance de parité !');
+    logLine('ERROR', '   Phase 4 devra corriger via swaps si possible.');
+  } else {
+    logLine('INFO', '✅ Toutes les classes respectent la tolérance de parité (±' + parityTolerance + ')');
+  }
 
   // Vérifier s'il reste des élèves non placés
   const remaining = baseGetFree_();
