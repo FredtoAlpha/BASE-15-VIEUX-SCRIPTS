@@ -3203,6 +3203,9 @@ function buildOfferWithQuotas_(ctx) {
     res[cls] = { LV2: [], OPT: [], quotas: {} };
   });
 
+  // ✅ V15 : Charger la matrice de capacités pour validation croisée
+  const capabilities = loadClassCapabilities_();
+
   // ✅ V12 : Détecter dynamiquement OPT vs LV2
   const detection = detectOPTvsLV2_(ctx);
   const optValues = detection.optValues;
@@ -3216,17 +3219,28 @@ function buildOfferWithQuotas_(ctx) {
       const q = Number(ctx.quotas[cls][k]) || 0;
       res[cls].quotas[K] = q;
 
+      // ✅ V15 : VALIDATION CROISÉE avec capacités
+      // Ne pas ajouter une option si la classe ne l'offre pas !
+      if (capabilities && capabilities[cls]) {
+        // Si capacités configurées, vérifier que la classe offre cette option
+        if (!capabilities[cls][K]) {
+          logLine('WARN', '⚠️ V15 : Classe ' + cls + ' a un quota ' + K + '=' + q + ' mais n\'offre PAS cette option selon la config !');
+          return; // Skip cette option
+        }
+      }
+
       // ✅ V12 : Classifier dynamiquement en LV2 ou OPT
       if (optValues.has(K)) {
-        res[cls].OPT.push(K);
+        if (res[cls].OPT.indexOf(K) === -1) res[cls].OPT.push(K);
       } else if (lv2Values.has(K)) {
-        res[cls].LV2.push(K);
+        if (res[cls].LV2.indexOf(K) === -1) res[cls].LV2.push(K);
       } else {
         // Si inconnu, fallback sur la logique hardcodée (compatibilité)
         if (K === 'CHAV' || K === 'LAT' || K === 'LATIN' || K === 'GRE' || K === 'OPT' || K === 'ITA_OPT') {
-          res[cls].OPT.push(K === 'ITA_OPT' ? 'ITA' : K);
+          const optName = K === 'ITA_OPT' ? 'ITA' : K;
+          if (res[cls].OPT.indexOf(optName) === -1) res[cls].OPT.push(optName);
         } else {
-          res[cls].LV2.push(K);
+          if (res[cls].LV2.indexOf(K) === -1) res[cls].LV2.push(K);
         }
       }
     });
