@@ -11,6 +11,45 @@
  */
 
 // ===================================================================
+// ✅ V16 : UTILITAIRES NORMALISATION
+// ===================================================================
+
+/**
+ * ✅ V16 : Normalise un tag OPT/LV2 pour garantir la cohérence
+ * CHAV 2, CHAV(2), LV2-CHAV → CHAV
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let tag = String(raw).trim().toUpperCase();
+
+  // Retirer préfixes
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+
+  // Retirer parenthèses
+  tag = tag.replace(/\(.*?\)/g, '');
+
+  // Retirer nombres terminaux
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, '');
+
+  // Retirer ponctuation/espaces
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+
+  // Synonymes
+  const synonyms = {
+    'ITALIEN': 'ITA', 'ITALIE': 'ITA',
+    'ESPAGNOL': 'ESP', 'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL', 'ALLEMAGNE': 'ALL',
+    'PORTUGAIS': 'PT', 'PORTUGAL': 'PT',
+    'ANGLAIS': 'ANG', 'ANGLETERRE': 'ANG',
+    'LATIN': 'LAT',
+    'CHEVAL': 'CHAV', 'EQUITATION': 'CHAV'
+  };
+
+  return synonyms[tag] || tag;
+}
+
+// ===================================================================
 // PHASE 1 V3 - OPTIONS & LV2
 // ===================================================================
 
@@ -485,6 +524,21 @@ function canSwapStudents_V3(idx1, cls1, idx2, cls2, data, headers, ctx) {
     return { ok: false, reason: 'Swap impossible : élève 2 → ' + cls1 + ' : ' + check2.reason };
   }
 
+  // ✅ V16 VÉRIFIER IMPACT SUR PARITÉ
+  const idxSexe = headers.indexOf('SEXE');
+  if (idxSexe >= 0) {
+    const sexe1 = String(data[idx1][idxSexe] || '').toUpperCase();
+    const sexe2 = String(data[idx2][idxSexe] || '').toUpperCase();
+
+    // Si genres différents, swap impacte la parité
+    if (sexe1 !== sexe2) {
+      const nom1 = String(data[idx1][headers.indexOf('NOM')] || 'inconnu');
+      const nom2 = String(data[idx2][headers.indexOf('NOM')] || 'inconnu');
+      logLine('DEBUG', '  ⚠️ Swap inter-genres : ' + nom1 + ' (' + sexe1 + ', ' + cls1 + ') ↔ ' + nom2 + ' (' + sexe2 + ', ' + cls2 + ')');
+      logLine('DEBUG', '     Impact parité détecté - vérifier tolérance après swap');
+    }
+  }
+
   return { ok: true, reason: '' };
 }
 
@@ -630,23 +684,61 @@ function Phase3I_completeAndParity_BASEOPTI_V3(ctx) {
     logLine('INFO', '  ' + cls + ' : ' + needs[cls].current + '/' + needs[cls].target + ' (besoin=' + needs[cls].need + ')');
   }
 
-  // Créer pools F et M (non assignés)
-  const poolF = [];
-  const poolM = [];
+  // ✅ V16 SÉCURITÉ : Filtrer les élèves avec contraintes fortes (OPT/LV2)
+  // Ces élèves DOIVENT avoir été placés en Phase 1, si encore libres = ALERTE
+  const idxOPT = headers.indexOf('OPT');
+  const idxLV2 = headers.indexOf('LV2');
+  const idxNom = headers.indexOf('NOM');
+
+  const constrainedStudents = [];
+  const freeForPhase3 = [];
 
   for (let i = 1; i < data.length; i++) {
     const assigned = String(data[i][idxAssigned] || '').trim();
     if (assigned) continue; // Déjà placé
 
-    const sexe = String(data[i][idxSexe] || '').toUpperCase();
-    if (sexe === 'F') {
-      poolF.push(i);
-    } else if (sexe === 'M') {
-      poolM.push(i);
+    const opt = normalizeOptionTag_(String(data[i][idxOPT] || ''));
+    const lv2 = normalizeOptionTag_(String(data[i][idxLV2] || ''));
+
+    if (opt || lv2) {
+      // Élève avec contrainte OPT/LV2 encore libre = PROBLÈME
+      constrainedStudents.push({
+        idx: i,
+        nom: data[i][idxNom] || 'inconnu',
+        opt: opt,
+        lv2: lv2
+      });
+      logLine('WARN', '⚠️ PHASE 3 : Élève avec contrainte encore libre : ' +
+              (data[i][idxNom] || 'inconnu') + ' (OPT=' + opt + ', LV2=' + lv2 + ')');
+    } else {
+      // Élève sans contrainte forte = OK pour Phase 3
+      freeForPhase3.push(i);
     }
   }
 
-  logLine('INFO', '👥 Pool disponible : ' + poolF.length + ' F, ' + poolM.length + ' M');
+  if (constrainedStudents.length > 0) {
+    logLine('ERROR', '❌ ' + constrainedStudents.length + ' élèves avec OPT/LV2 non placés en Phase 1 !');
+    logLine('ERROR', '   Vérifier quotas _STRUCTURE et capacité des classes.');
+  }
+
+  // Créer pools F et M (élèves sans contraintes uniquement)
+  const poolF = [];
+  const poolM = [];
+
+  for (let i = 0; i < freeForPhase3.length; i++) {
+    const idx = freeForPhase3[i];
+    const sexe = String(data[idx][idxSexe] || '').toUpperCase();
+    if (sexe === 'F') {
+      poolF.push(idx);
+    } else if (sexe === 'M') {
+      poolM.push(idx);
+    }
+  }
+
+  logLine('INFO', '👥 Pool Phase 3 (sans OPT/LV2) : ' + poolF.length + ' F, ' + poolM.length + ' M');
+  if (constrainedStudents.length > 0) {
+    logLine('INFO', '⚠️  Élèves contraints exclus : ' + constrainedStudents.length);
+  }
 
   // 🎯 CALCULER LE RATIO F/M IDÉAL (basé sur les totaux réels)
   let totalF = 0, totalM = 0;
@@ -794,6 +886,39 @@ function Phase3I_completeAndParity_BASEOPTI_V3(ctx) {
     logLine('WARN', '⚠️ ' + remaining + ' élèves non placés après P3');
   }
 
+  // ✅ V16 TOLÉRANCE PARITÉ : Vérifier après placement
+  logLine('INFO', '🔍 Vérification de la tolérance de parité...');
+  const parityTolerance = ctx.tolParite || 2;
+  let parityViolations = 0;
+
+  for (const cls in needs) {
+    // Compter F/M dans cette classe
+    let F = 0, M = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idxAssigned] || '').trim() === cls) {
+        const sexe = String(data[i][idxSexe] || '').toUpperCase();
+        if (sexe === 'F') F++;
+        else if (sexe === 'M') M++;
+      }
+    }
+
+    const delta = Math.abs(F - M);
+    if (delta > parityTolerance) {
+      parityViolations++;
+      logLine('WARN', '⚠️ ' + cls + ' : Parité hors tolérance ! (' + F + 'F / ' + M + 'M, écart=' + delta + ' > ' + parityTolerance + ')');
+      logLine('WARN', '   Action recommandée : Phase 4 devra corriger via swaps.');
+    } else {
+      logLine('INFO', '  ✅ ' + cls + ' : Parité OK (' + F + 'F / ' + M + 'M, écart=' + delta + ')');
+    }
+  }
+
+  if (parityViolations > 0) {
+    logLine('ERROR', '❌ ' + parityViolations + ' classe(s) hors tolérance de parité !');
+    logLine('ERROR', '   Phase 4 devra corriger via swaps si possible.');
+  } else {
+    logLine('INFO', '✅ Toutes les classes respectent la tolérance de parité (±' + parityTolerance + ')');
+  }
+
   logLine('INFO', '✅ PHASE 3 V3 terminée');
 
   return { ok: true };
@@ -804,10 +929,22 @@ function Phase3I_completeAndParity_BASEOPTI_V3(ctx) {
 // ===================================================================
 
 /**
+ * ✅ V16 : Calcule écart-type d'un tableau de valeurs
+ * Utilisé pour mesurer l'hétérogénéité intra-classe
+ */
+function computeStdDev_(values) {
+  if (!values || values.length === 0) return 0;
+  const mean = values.reduce(function(a, b) { return a + b; }, 0) / values.length;
+  const variance = values.reduce(function(sum, v) { return sum + Math.pow(v - mean, 2); }, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/**
  * Phase 4 V3 : Optimise les scores par swaps
  * LIT : _BASEOPTI
  * PRIORITÉ : COM=1 > COM=2 > TRA > PART > ABS
  * RÉCUPÈRE : Poids depuis l'UI via ctx.weights
+ * ✅ V16 : Inclut hétérogénéité PART/ABS (pas que COM/TRA)
  */
 function Phase4_balanceScoresSwaps_BASEOPTI_V3(ctx) {
   logLine('INFO', '='.repeat(80));
@@ -1142,17 +1279,46 @@ function findBestSwap_V3(data, headers, byClass, weights, ctx) {
           const newParityScore = calculateParityScore_V3(data, headers, byClass);
           const parityGain = currentParityScore - newParityScore; // Positif = amélioration parité
 
+          // ✅ V16 : VÉRIFIER TOLÉRANCE PARITÉ STRICTE
+          // Bloquer les swaps qui font dépasser tolParite, MÊME s'ils améliorent variance
+          const tolParite = ctx.tolParite || 2;
+          const idxSexe = headers.indexOf('SEXE');
+          let violatesParityTolerance = false;
+
+          if (idxSexe >= 0) {
+            // Vérifier parité de cls1 et cls2 après swap
+            for (const cls of [cls1, cls2]) {
+              let F = 0, M = 0;
+              byClass[cls].forEach(function(idx) {
+                const sexe = String(data[idx][idxSexe] || '').toUpperCase();
+                if (sexe === 'F') F++;
+                else if (sexe === 'M') M++;
+              });
+              if (Math.abs(F - M) > tolParite) {
+                violatesParityTolerance = true;
+                break;
+              }
+            }
+          }
+
           // Restaurer
           data[idx1][headers.indexOf('_CLASS_ASSIGNED')] = saved1;
           data[idx2][headers.indexOf('_CLASS_ASSIGNED')] = saved2;
           byClass[cls1][s1] = idx1;
           byClass[cls2][s2] = idx2;
 
+          // ❌ BLOQUER si viole tolérance parité
+          if (violatesParityTolerance) {
+            noImprovement++;
+            continue;
+          }
+
           // Décider si ce swap est meilleur
           let takeThisSwap = false;
 
           if (improvement > bestImprovement * 1.02) {
             // Amélioration variance significativement meilleure (> 2%)
+            // ✅ V16 : Maintenant sûr de prendre car tolérance parité vérifiée ci-dessus
             takeThisSwap = true;
           } else if (improvement >= bestImprovement * 0.98 && improvement > 0.001) {
             // Amélioration variance similaire (écart < 2%), utiliser parité comme départage

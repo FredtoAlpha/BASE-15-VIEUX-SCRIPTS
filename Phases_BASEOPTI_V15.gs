@@ -81,14 +81,17 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
 
     capabilities[classe] = {};
 
-    // Parser "ITA=6,CHAV=7,LATIN=3"
+    // Parser "ITA=6,CHAV=7,LATIN=3" ou "CHAV 2=5"
     if (optionsStr) {
       const parts = optionsStr.split(',');
       for (const part of parts) {
-        const match = part.trim().match(/^([A-Z]+)=/);
+        const match = part.trim().match(/^([^=]+)=/);
         if (match) {
-          const optName = match[1];
-          capabilities[classe][optName] = true;
+          // ✅ V16 : NORMALISER les noms d'options (CHAV 2 → CHAV)
+          const optName = normalizeOptionTag_(match[1]);
+          if (optName) {
+            capabilities[classe][optName] = true;
+          }
         }
       }
     }
@@ -122,8 +125,9 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
 
     if (assigned) continue; // Déjà placé
 
-    const opt = idxOPT >= 0 ? String(row[idxOPT] || '').trim().toUpperCase() : '';
-    const lv2 = idxLV2 >= 0 ? String(row[idxLV2] || '').trim().toUpperCase() : '';
+    // ✅ V16 : NORMALISER les tags pour cohérence (CHAV 2 → CHAV)
+    const opt = idxOPT >= 0 ? normalizeOptionTag_(String(row[idxOPT] || '')) : '';
+    const lv2 = idxLV2 >= 0 ? normalizeOptionTag_(String(row[idxLV2] || '')) : '';
     const nom = idxNom >= 0 ? String(row[idxNom] || '').trim() : '';
     const prenom = idxPrenom >= 0 ? String(row[idxPrenom] || '').trim() : '';
 
@@ -156,7 +160,13 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
   for (const classe in (ctx.quotas || {})) {
     remainingQuotas[classe] = {};
     for (const constraint in ctx.quotas[classe]) {
-      remainingQuotas[classe][constraint] = ctx.quotas[classe][constraint];
+      // ✅ V16 : NORMALISER les clés de quotas (CHAV 2 → CHAV)
+      const normalizedConstraint = normalizeOptionTag_(constraint);
+      if (normalizedConstraint) {
+        // Si plusieurs variantes normalisent vers même clé (CHAV 1, CHAV 2 → CHAV), additionner
+        remainingQuotas[classe][normalizedConstraint] =
+          (remainingQuotas[classe][normalizedConstraint] || 0) + ctx.quotas[classe][constraint];
+      }
     }
   }
 
