@@ -41,6 +41,10 @@ function Phase3_AdaptiveParity_V4(ctx) {
     sexe: headers.indexOf('SEXE'),
     nom: headers.indexOf('NOM'),
     prenom: headers.indexOf('PRENOM'),
+    opt: headers.indexOf('OPT'),
+    lv2: headers.indexOf('LV2'),
+    asso: headers.indexOf('ASSO'),
+    disso: headers.indexOf('DISSO'),
     // Scores pour pré-analyse
     com: headers.indexOf('COM'),
     tra: headers.indexOf('TRA'),
@@ -127,6 +131,15 @@ function analyzeCurrentDistribution(data, indices, ctx) {
     unplacedPool: []
   };
 
+  const safeGet = (row, index) => (index >= 0 ? row[index] : '');
+  const normalizeConstraintValue = value => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value.trim();
+    if (value === true) return 'TRUE';
+    if (value === false) return '';
+    return String(value).trim();
+  };
+
   // Initialiser les stats par classe
   (ctx.levels || ['5°1', '5°2', '5°3', '5°4', '5°5', '5°6']).forEach(classe => {
     analysis.classeStats[classe] = {
@@ -144,6 +157,8 @@ function analyzeCurrentDistribution(data, indices, ctx) {
     const sexe = String(row[indices.sexe]).toUpperCase();
     const placed = row[indices.placed] === true || row[indices.placed] === 'TRUE';
     const assigned = row[indices.assigned];
+    const nom = String(safeGet(row, indices.nom) || '').trim();
+    const prenom = String(safeGet(row, indices.prenom) || '').trim();
 
     if (sexe === 'F' || sexe === 'M') {
       analysis.totalStudents++;
@@ -160,19 +175,37 @@ function analyzeCurrentDistribution(data, indices, ctx) {
       } else {
         analysis.unplacedStudents++;
         analysis.unplacedByGender[sexe]++;
-        
+
         // Ajouter au pool des non-placés avec leurs scores
+        const opt = normalizeConstraintValue(safeGet(row, indices.opt));
+        const lv2 = normalizeConstraintValue(safeGet(row, indices.lv2));
+        const asso = normalizeConstraintValue(safeGet(row, indices.asso));
+        const disso = normalizeConstraintValue(safeGet(row, indices.disso));
+        const constraintLabels = [];
+        if (opt) constraintLabels.push(`OPT=${opt}`);
+        if (lv2) constraintLabels.push(`LV2=${lv2}`);
+        if (asso) constraintLabels.push(`ASSO=${asso}`);
+        if (disso) constraintLabels.push(`DISSO=${disso}`);
+
         analysis.unplacedPool.push({
           index: i,
           sexe: sexe,
+          nom: nom,
+          prenom: prenom,
           com: parseFloat(row[indices.com]) || 0,
           tra: parseFloat(row[indices.tra]) || 0,
           part: parseFloat(row[indices.part]) || 0,
           abs: parseFloat(row[indices.abs]) || 0,
+          opt: opt,
+          lv2: lv2,
+          asso: asso,
+          disso: disso,
+          constraintLabels: constraintLabels,
+          hasConstraint: constraintLabels.length > 0,
           // Score composite (COM prioritaire)
-          compositeScore: (parseFloat(row[indices.com]) || 0) * 2 + 
-                         (parseFloat(row[indices.tra]) || 0) + 
-                         (parseFloat(row[indices.part]) || 0) + 
+          compositeScore: (parseFloat(row[indices.com]) || 0) * 2 +
+                         (parseFloat(row[indices.tra]) || 0) +
+                         (parseFloat(row[indices.part]) || 0) +
                          (parseFloat(row[indices.abs]) || 0)
         });
       }
@@ -265,6 +298,21 @@ function placeStudentsWithAdaptiveParity(data, indices, analysis, targets) {
     byClass: {}
   };
 
+  const hasConstraintForAutoPlacement = student => {
+    if (!student) return false;
+    if (student.hasConstraint) return true;
+    return Boolean(student.constraintLabels && student.constraintLabels.length > 0);
+  };
+
+  const formatStudentNameForLog = student => {
+    if (!student) return 'Élève inconnu';
+    const parts = [];
+    if (student.prenom) parts.push(student.prenom);
+    if (student.nom) parts.push(student.nom);
+    if (parts.length === 0) return `Élève #${student.index}`;
+    return parts.join(' ').trim();
+  };
+
   // Initialiser les compteurs
   Object.keys(targets).forEach(classe => {
     result.byClass[classe] = { total: 0, F: 0, M: 0 };
@@ -285,19 +333,43 @@ function placeStudentsWithAdaptiveParity(data, indices, analysis, targets) {
     // et en prenant les scores variés (début, milieu, fin du pool trié)
     let placed = 0;
     let poolIndex = 0;
-    
+
     while ((neededF > 0 || neededM > 0) && poolIndex < analysis.unplacedPool.length) {
       const student = analysis.unplacedPool[poolIndex];
-      
-      if (!student || data[student.index][indices.placed]) {
+
+      if (!student) {
+        poolIndex++;
+        continue;
+      }
+
+      if (student.skippedForConstraints) {
+        poolIndex++;
+        continue;
+      }
+
+      if (data[student.index][indices.placed]) {
+        poolIndex++;
+        continue;
+      }
+
+      if (hasConstraintForAutoPlacement(student)) {
+        if (!student.constraintLogged) {
+          const constraintMessage = (student.constraintLabels && student.constraintLabels.length > 0)
+            ? student.constraintLabels.join(', ')
+            : 'contraintes inconnues';
+          logLine('INFO', `  ⛔ ${formatStudentNameForLog(student)} ignoré pour placement auto (contraintes : ${constraintMessage})`);
+          student.constraintLogged = true;
+        }
+
+        student.skippedForConstraints = true;
         poolIndex++;
         continue;
       }
 
       // Vérifier si on a besoin de ce genre
-      if ((student.sexe === 'F' && neededF > 0) || 
+      if ((student.sexe === 'F' && neededF > 0) ||
           (student.sexe === 'M' && neededM > 0)) {
-        
+
         // Placer l'élève
         data[student.index][indices.assigned] = classe;
         data[student.index][indices.placed] = true;
@@ -322,7 +394,8 @@ function placeStudentsWithAdaptiveParity(data, indices, analysis, targets) {
       } else {
         // Chercher un élève non placé vers la fin
         let endIndex = analysis.unplacedPool.length - 1;
-        while (endIndex > poolIndex && analysis.unplacedPool[endIndex].placed) {
+        while (endIndex > poolIndex && (analysis.unplacedPool[endIndex].placed ||
+               analysis.unplacedPool[endIndex].skippedForConstraints)) {
           endIndex--;
         }
         if (endIndex > poolIndex) {
