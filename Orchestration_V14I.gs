@@ -3203,31 +3203,18 @@ function buildOfferWithQuotas_(ctx) {
     res[cls] = { LV2: [], OPT: [], quotas: {} };
   });
 
-  // ✅ V15 : Charger la matrice de capacités pour validation croisée
-  const capabilities = loadClassCapabilities_();
-
   // ✅ V12 : Détecter dynamiquement OPT vs LV2
   const detection = detectOPTvsLV2_(ctx);
   const optValues = detection.optValues;
   const lv2Values = detection.lv2Values;
 
-  // Remplir depuis ctx.quotas
+  // Remplir depuis ctx.quotas (qui vient de _STRUCTURE)
   Object.keys(ctx.quotas || {}).forEach(function(cls) {
     res[cls] = res[cls] || { LV2: [], OPT: [], quotas: {} };
     Object.keys(ctx.quotas[cls]).forEach(function(k) {
       const K = k.toUpperCase();
       const q = Number(ctx.quotas[cls][k]) || 0;
       res[cls].quotas[K] = q;
-
-      // ✅ V15 : VALIDATION CROISÉE avec capacités
-      // Ne pas ajouter une option si la classe ne l'offre pas !
-      if (capabilities && capabilities[cls]) {
-        // Si capacités configurées, vérifier que la classe offre cette option
-        if (!capabilities[cls][K]) {
-          logLine('WARN', '⚠️ V15 : Classe ' + cls + ' a un quota ' + K + '=' + q + ' mais n\'offre PAS cette option selon la config !');
-          return; // Skip cette option
-        }
-      }
 
       // ✅ V12 : Classifier dynamiquement en LV2 ou OPT
       if (optValues.has(K)) {

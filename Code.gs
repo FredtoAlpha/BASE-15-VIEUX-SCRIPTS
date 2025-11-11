@@ -3036,53 +3036,6 @@ function setStructureOptionsFromUI(optionsByClass) {
   }
 }
 
-/**
- * ✅ V15 : Sauvegarde la configuration des capacités Classe × Options
- * @param {Object} capabilities - Structure: { "6°1": { "ITA": true, "CHAV": false }, ... }
- * @returns {Object} - { success: boolean, message: string }
- */
-function saveClassCapabilities_(capabilities) {
-  try {
-    if (!capabilities || typeof capabilities !== 'object') {
-      return { success: false, error: 'Configuration invalide' };
-    }
-
-    // Sauvegarder dans les propriétés du script
-    const props = PropertiesService.getScriptProperties();
-    props.setProperty('CLASS_CAPABILITIES', JSON.stringify(capabilities));
-
-    console.log('✅ V15 : Configuration des capacités sauvegardée:', capabilities);
-    return { success: true, message: 'Configuration sauvegardée' };
-
-  } catch (e) {
-    console.error('❌ Erreur saveClassCapabilities_:', e);
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
- * ✅ V15 : Charge la configuration des capacités Classe × Options
- * @returns {Object|null} - La configuration ou null si non trouvée
- */
-function loadClassCapabilities_() {
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const json = props.getProperty('CLASS_CAPABILITIES');
-
-    if (!json) {
-      console.log('ℹ️ V15 : Aucune configuration de capacités trouvée (première utilisation)');
-      return null;
-    }
-
-    const capabilities = JSON.parse(json);
-    console.log('✅ V15 : Configuration des capacités chargée:', capabilities);
-    return capabilities;
-
-  } catch (e) {
-    console.error('❌ Erreur loadClassCapabilities_:', e);
-    return null;
-  }
-}
 
 /**
  * Compte les élèves par option/LV2 depuis les onglets d'un mode
