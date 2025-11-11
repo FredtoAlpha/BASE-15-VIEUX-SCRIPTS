@@ -856,6 +856,12 @@ function readElevesFromSelectedMode_(ctx) {
 function readElevesFromCache_(ctx) {
   const classesState = {};
 
+  // ✅ FIX: Construire mapping onglet → niveau depuis ctx
+  const sheetToNiveau = {};
+  for (let i = 0; i < (ctx.cacheSheets || []).length; i++) {
+    sheetToNiveau[ctx.cacheSheets[i]] = ctx.niveaux[i];
+  }
+
   for (const sheetName of ctx.cacheSheets) {
     const sheet = ctx.ss.getSheetByName(sheetName);
     if (!sheet) {
@@ -864,7 +870,8 @@ function readElevesFromCache_(ctx) {
     }
 
     const eleves = readElevesFromSheet_(sheet);
-    const niveau = sheetName.replace(/CACHE$/, '');
+    // ✅ FIX: Utiliser le mapping au lieu du regex /CACHE$/
+    const niveau = sheetToNiveau[sheetName] || sheetName.replace(/CACHE$/, '');
     classesState[niveau] = eleves;
   }
 
@@ -904,18 +911,25 @@ function writeAllClassesToCACHE_(ctx, classesState) {
   // 1. Purger les feuilles CACHE
   clearSheets_(ctx);
 
+  // ✅ FIX: Construire mapping niveau → nom onglet depuis ctx
+  const niveauToSheet = {};
+  for (let i = 0; i < (ctx.niveaux || []).length; i++) {
+    niveauToSheet[ctx.niveaux[i]] = ctx.cacheSheets[i];
+  }
+
   // 2. Écrire les nouvelles données
   for (const [niveau, eleves] of Object.entries(classesState)) {
-    const sheetName = niveau + 'CACHE';
+    // ✅ FIX: Utiliser le mapping au lieu de coder en dur 'CACHE'
+    const sheetName = niveauToSheet[niveau] || (niveau + (ctx.writeTarget || 'CACHE'));
     writeElevesToSheet_(ctx.ss, sheetName, eleves);
-    
+
     // 3. Vérifier l'unicité des IDs
     const uniqueIds = new Set();
     eleves.forEach(function(e) {
       const id = String(e._ID || e.ID_ELEVE || e.ID || '').trim();
       if (id) uniqueIds.add(id);
     });
-    
+
     if (uniqueIds.size !== eleves.length) {
       logLine('ERROR', '❌ ' + sheetName + ' : Doublons détectés ! ' + uniqueIds.size + ' IDs uniques pour ' + eleves.length + ' élèves');
     }
