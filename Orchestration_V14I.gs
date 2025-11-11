@@ -464,8 +464,30 @@ function readQuotasFromUI_() {
 }
 
 /**
+ * ✅ Normalise un tag d'option ou LV2 (copie depuis OptiConfig_System.gs)
+ * Voir normalizeOptionTag_() dans OptiConfig_System.gs pour documentation complète
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let tag = String(raw).trim().toUpperCase();
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+  tag = tag.replace(/\(.*?\)/g, '');
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, '');
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+  const synonyms = {
+    'ITALIEN': 'ITA', 'ITALIE': 'ITA', 'ESPAGNOL': 'ESP', 'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL', 'ALLEMAGNE': 'ALL', 'CHINOIS': 'CHI', 'CHINE': 'CHI',
+    'LATIN': 'LAT', 'GREC': 'GRE', 'PORTUGUAIS': 'PT', 'PORTUGAL': 'PT',
+    'CHEVAL': 'CHAV'
+  };
+  return synonyms[tag] || tag;
+}
+
+/**
  * Lit les quotas depuis la feuille _STRUCTURE
  * Parse la colonne OPTIONS au format "ITA=6,CHAV=10,ESP=5"
+ * ✅ CORRECTION NORMALISATION : Applique normalizeOptionTag_() pour cohérence avec élèves
  */
 function readQuotasFromStructure_(sheet) {
   const quotas = {};
@@ -519,15 +541,25 @@ function readQuotasFromStructure_(sheet) {
 
       quotas[classe] = {};
 
-      // ✅ Parser le format "ITA=6,CHAV=10,ESP=5"
+      // ✅ Parser le format "ITA=6,CHAV 2=10,ESP=5" avec NORMALISATION
       if (optionsStr) {
         optionsStr.split(',').forEach(function(pair) {
           const parts = pair.split('=');
           if (parts.length === 2) {
-            const optName = parts[0].trim().toUpperCase();
+            const rawKey = parts[0].trim();
+            const normalizedKey = normalizeOptionTag_(rawKey); // ✅ NORMALISATION (CHAV 2 → CHAV)
             const optValue = parseInt(parts[1].trim()) || 0;
-            quotas[classe][optName] = optValue;
-            logLine('INFO', '  ✅ ' + classe + '.' + optName + ' = ' + optValue);
+
+            if (optValue > 0 && normalizedKey) {
+              // ✅ Additionner si plusieurs quotas se normalisent vers la même clé
+              quotas[classe][normalizedKey] = (quotas[classe][normalizedKey] || 0) + optValue;
+
+              // ✅ LOG pour traçabilité
+              if (rawKey !== normalizedKey) {
+                logLine('DEBUG', '  🔄 Normalisation: "' + rawKey + '" → "' + normalizedKey + '" (quota=' + optValue + ')');
+              }
+              logLine('INFO', '  ✅ ' + classe + '.' + normalizedKey + ' = ' + quotas[classe][normalizedKey]);
+            }
           }
         });
       }
