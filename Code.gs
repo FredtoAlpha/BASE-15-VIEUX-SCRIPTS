@@ -2986,10 +2986,9 @@ function setStructureOptionsFromUI(optionsByClass) {
       return { success: false, error: 'Colonnes manquantes dans _STRUCTURE' };
     }
 
-    // Compter les élèves par option depuis les onglets TEST
-    const sourceMode = ELEVES_MODULE_CONFIG.TEST_SUFFIX;
-    const optionCounts = countStudentsByOption(ss, sourceMode);
-    console.log('📊 Comptage élèves par option:', JSON.stringify(optionCounts));
+    // ✅ V13 FIX : UTILISER les quotas de l'UI, PAS le comptage auto !
+    // AVANT: Ignorait les quotas UI et recomptait depuis TEST
+    // APRÈS: Utilise directement les quotas spécifiés par l'utilisateur
 
     // Écrire les options pour chaque classe
     let updatedCount = 0;
@@ -3003,19 +3002,19 @@ function setStructureOptionsFromUI(optionsByClass) {
       // Construire la chaîne OPTIONS (format: "ITA=5,LATIN=3,CHAV=2")
       const optionPairs = [];
 
-      // Ajouter les LV2
-      if (Array.isArray(classConfig.LV2)) {
-        classConfig.LV2.forEach(lv2 => {
-          const count = optionCounts[lv2] || 999; // Si pas de comptage, mettre un quota élevé
-          optionPairs.push(`${lv2}=${count}`);
+      // ✅ V13 : Ajouter les LV2 avec leurs quotas UI
+      if (classConfig.LV2 && typeof classConfig.LV2 === 'object') {
+        Object.keys(classConfig.LV2).forEach(lv2 => {
+          const quota = classConfig.LV2[lv2];
+          optionPairs.push(`${lv2}=${quota}`);
         });
       }
 
-      // Ajouter les OPT
-      if (Array.isArray(classConfig.OPT)) {
-        classConfig.OPT.forEach(opt => {
-          const count = optionCounts[opt] || 999;
-          optionPairs.push(`${opt}=${count}`);
+      // ✅ V13 : Ajouter les OPT avec leurs quotas UI
+      if (classConfig.OPT && typeof classConfig.OPT === 'object') {
+        Object.keys(classConfig.OPT).forEach(opt => {
+          const quota = classConfig.OPT[opt];
+          optionPairs.push(`${opt}=${quota}`);
         });
       }
 

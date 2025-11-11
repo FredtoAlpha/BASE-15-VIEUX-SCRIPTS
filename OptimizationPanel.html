@@ -1759,22 +1759,24 @@ const OptimizationPanel = {
       // ===== 1. ÉCRIRE DANS _STRUCTURE (SOURCE DE VÉRITÉ UNIQUE) =====
       console.log('📝 Écriture dans _STRUCTURE (référence)...');
       setStreamingStatus('📝 Mise à jour de _STRUCTURE...', 'Synchronisation...');
-      
-      // ✅ CORRECTION CRITIQUE : Convertir le format des quotas
-      // De: { "6°1": { "ITA": 6, "CHAV": 10 } }
-      // Vers: { "6°1": { LV2: ["ITA"], OPT: ["CHAV"] } }
+
+      // ✅ V13 FIX : Envoyer les quotas AVEC VALEURS, pas juste les noms !
+      // AVANT: { "6°1": { LV2: ["ITA"], OPT: ["CHAV"] } } → perte des quotas !
+      // APRÈS: { "6°1": { LV2: {ITA: 6}, OPT: {CHAV: 7} } }
       const optionsByClass = {};
       Object.keys(config.quotas || {}).forEach(cls => {
         const quotas = config.quotas[cls] || {};
-        optionsByClass[cls] = { LV2: [], OPT: [] };
-        
+        optionsByClass[cls] = { LV2: {}, OPT: {} };
+
         Object.keys(quotas).forEach(option => {
           const optUpper = option.toUpperCase();
+          const value = quotas[option];
+
           // Classifier en LV2 ou OPT
           if (optUpper === 'CHAV' || optUpper === 'LAT' || optUpper === 'GRE' || optUpper === 'LATIN') {
-            optionsByClass[cls].OPT.push(optUpper);
+            optionsByClass[cls].OPT[optUpper] = value;
           } else {
-            optionsByClass[cls].LV2.push(optUpper);
+            optionsByClass[cls].LV2[optUpper] = value;
           }
         });
       });
