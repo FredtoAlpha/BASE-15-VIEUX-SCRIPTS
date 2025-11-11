@@ -2380,18 +2380,28 @@ function isMoveAllowed_(eleve, clsTo, offer, counts, quotas) {
 
   // 1) Offre LV2/OPT de la classe cible
   const off = offer[clsTo] || { LV2: [], OPT: [], quotas: {} };
-  
+
   const lv2 = String(eleve.LV2 || eleve.lv2 || '').trim().toUpperCase();
   const opt = String(eleve.OPT || eleve.opt || '').trim().toUpperCase();
-  
+
   // Vérifier que la LV2 est autorisée (sauf ANG qui est partout)
   if (lv2 && lv2 !== 'ANG' && off.LV2.length > 0 && off.LV2.indexOf(lv2) === -1) {
     return false;
   }
-  
-  // Vérifier que l'OPT est autorisée
-  if (opt && off.OPT.length > 0 && off.OPT.indexOf(opt) === -1) {
-    return false;
+
+  // ✅ V12 FIX : Vérifier que l'OPT est autorisée
+  // AVANT V12 : Vérification active uniquement si off.OPT.length > 0
+  // → BUG : Élèves LATIN/CHAV pouvaient aller dans classes sans ces options
+  // APRÈS V12 : Si élève a OPT (autre que défaut ESP), la classe DOIT le proposer
+  if (opt && opt !== 'ESP') {
+    // Si la classe ne propose AUCUNE option → refuser
+    if (off.OPT.length === 0) {
+      return false;
+    }
+    // Si la classe propose des options mais pas celle de l'élève → refuser
+    if (off.OPT.indexOf(opt) === -1) {
+      return false;
+    }
   }
 
   // 2) Respect des quotas (si définis)
@@ -3125,18 +3135,79 @@ function openCacheTabs_(ctx) {
 // ===================================================================
 
 /**
- * Construit l'offre avec quotas détaillés depuis ctx.quotas
+ * ✅ V12 : Détecte dynamiquement quelles contraintes sont OPT vs LV2
+ * Lit les colonnes F (OPT) et G (LV2) depuis CONSOLIDATION ou sources
+ * Retourne { optValues: Set, lv2Values: Set }
+ */
+function detectOPTvsLV2_(ctx) {
+  const optValues = new Set();
+  const lv2Values = new Set();
+
+  // Essayer de lire depuis CONSOLIDATION d'abord
+  let sourceSheet = ctx.ss.getSheetByName('CONSOLIDATION');
+
+  // Si pas CONSOLIDATION, lire depuis les sources
+  if (!sourceSheet && ctx.srcSheets && ctx.srcSheets.length > 0) {
+    sourceSheet = ctx.ss.getSheetByName(ctx.srcSheets[0]);
+  }
+
+  // Si toujours pas de source, utiliser fallback hardcodé
+  if (!sourceSheet) {
+    logLine('WARN', '⚠️ Aucune source trouvée pour détecter OPT vs LV2, utilisation fallback');
+    optValues.add('CHAV');
+    optValues.add('LATIN');
+    optValues.add('LAT');
+    optValues.add('GRE');
+    lv2Values.add('ITA');
+    lv2Values.add('ALL');
+    lv2Values.add('PT');
+    lv2Values.add('ESP');
+    return { optValues: optValues, lv2Values: lv2Values };
+  }
+
+  // Lire les données
+  const data = sourceSheet.getDataRange().getValues();
+  if (data.length < 2) {
+    logLine('WARN', '⚠️ Source vide pour détecter OPT vs LV2');
+    return { optValues: optValues, lv2Values: lv2Values };
+  }
+
+  const headers = data[0];
+  const idxOPT = headers.indexOf('OPT');
+  const idxLV2 = headers.indexOf('LV2');
+
+  // Scanner toutes les lignes
+  for (let i = 1; i < data.length; i++) {
+    const opt = idxOPT >= 0 ? String(data[i][idxOPT] || '').trim().toUpperCase() : '';
+    const lv2 = idxLV2 >= 0 ? String(data[i][idxLV2] || '').trim().toUpperCase() : '';
+
+    if (opt && opt !== 'ESP') optValues.add(opt);
+    if (lv2 && lv2 !== 'ESP') lv2Values.add(lv2);
+  }
+
+  logLine('INFO', '🔍 Détection OPT vs LV2 : OPT=[' + Array.from(optValues).join(', ') + '] LV2=[' + Array.from(lv2Values).join(', ') + ']');
+
+  return { optValues: optValues, lv2Values: lv2Values };
+}
+
+/**
+ * ✅ V12 : Construit l'offre avec quotas détaillés depuis ctx.quotas (détection dynamique OPT vs LV2)
  * Retourne { cls: { LV2:[], OPT:[], quotas: {ITA:6, CHAV:10, ...} } }
  */
 function buildOfferWithQuotas_(ctx) {
   const res = {}; // { cls: { LV2:[], OPT:[], quotas: {ITA:6, CHAV:10, ...} } }
-  
+
   // Initialiser depuis cacheSheets
   (ctx.cacheSheets || []).forEach(function(name) {
     const cls = name.replace(/CACHE$/, '').trim();
     res[cls] = { LV2: [], OPT: [], quotas: {} };
   });
-  
+
+  // ✅ V12 : Détecter dynamiquement OPT vs LV2
+  const detection = detectOPTvsLV2_(ctx);
+  const optValues = detection.optValues;
+  const lv2Values = detection.lv2Values;
+
   // Remplir depuis ctx.quotas
   Object.keys(ctx.quotas || {}).forEach(function(cls) {
     res[cls] = res[cls] || { LV2: [], OPT: [], quotas: {} };
@@ -3144,16 +3215,23 @@ function buildOfferWithQuotas_(ctx) {
       const K = k.toUpperCase();
       const q = Number(ctx.quotas[cls][k]) || 0;
       res[cls].quotas[K] = q;
-      
-      // Classifier en LV2 ou OPT
-      if (K === 'CHAV' || K === 'LAT' || K === 'GRE' || K === 'OPT' || K === 'ITA_OPT') {
-        res[cls].OPT.push(K === 'ITA_OPT' ? 'ITA' : K);
-      } else {
+
+      // ✅ V12 : Classifier dynamiquement en LV2 ou OPT
+      if (optValues.has(K)) {
+        res[cls].OPT.push(K);
+      } else if (lv2Values.has(K)) {
         res[cls].LV2.push(K);
+      } else {
+        // Si inconnu, fallback sur la logique hardcodée (compatibilité)
+        if (K === 'CHAV' || K === 'LAT' || K === 'LATIN' || K === 'GRE' || K === 'OPT' || K === 'ITA_OPT') {
+          res[cls].OPT.push(K === 'ITA_OPT' ? 'ITA' : K);
+        } else {
+          res[cls].LV2.push(K);
+        }
       }
     });
   });
-  
+
   return res;
 }
 
