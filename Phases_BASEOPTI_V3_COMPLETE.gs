@@ -1279,17 +1279,46 @@ function findBestSwap_V3(data, headers, byClass, weights, ctx) {
           const newParityScore = calculateParityScore_V3(data, headers, byClass);
           const parityGain = currentParityScore - newParityScore; // Positif = amélioration parité
 
+          // ✅ V16 : VÉRIFIER TOLÉRANCE PARITÉ STRICTE
+          // Bloquer les swaps qui font dépasser tolParite, MÊME s'ils améliorent variance
+          const tolParite = ctx.tolParite || 2;
+          const idxSexe = headers.indexOf('SEXE');
+          let violatesParityTolerance = false;
+
+          if (idxSexe >= 0) {
+            // Vérifier parité de cls1 et cls2 après swap
+            for (const cls of [cls1, cls2]) {
+              let F = 0, M = 0;
+              byClass[cls].forEach(function(idx) {
+                const sexe = String(data[idx][idxSexe] || '').toUpperCase();
+                if (sexe === 'F') F++;
+                else if (sexe === 'M') M++;
+              });
+              if (Math.abs(F - M) > tolParite) {
+                violatesParityTolerance = true;
+                break;
+              }
+            }
+          }
+
           // Restaurer
           data[idx1][headers.indexOf('_CLASS_ASSIGNED')] = saved1;
           data[idx2][headers.indexOf('_CLASS_ASSIGNED')] = saved2;
           byClass[cls1][s1] = idx1;
           byClass[cls2][s2] = idx2;
 
+          // ❌ BLOQUER si viole tolérance parité
+          if (violatesParityTolerance) {
+            noImprovement++;
+            continue;
+          }
+
           // Décider si ce swap est meilleur
           let takeThisSwap = false;
 
           if (improvement > bestImprovement * 1.02) {
             // Amélioration variance significativement meilleure (> 2%)
+            // ✅ V16 : Maintenant sûr de prendre car tolérance parité vérifiée ci-dessus
             takeThisSwap = true;
           } else if (improvement >= bestImprovement * 0.98 && improvement > 0.001) {
             // Amélioration variance similaire (écart < 2%), utiliser parité comme départage
