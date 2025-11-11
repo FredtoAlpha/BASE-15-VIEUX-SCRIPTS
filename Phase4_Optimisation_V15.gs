@@ -1295,7 +1295,7 @@ function getUpdatedStats(currentStats, classe1Name, classe2Name, elevesClasse1Ap
 
 function buildOptionPools(structure, config) {
     const pools = {};
-    const suffix = config?.TEST_SUFFIX || "TEST"; 
+    const suffix = config?.TEST_SUFFIX || "TEST";
     // optionSeparatorRegex est retiré car lireStructureFeuille gère le split
 
     if (!structure || !structure.classes || !Array.isArray(structure.classes)) {
@@ -1333,6 +1333,265 @@ function buildOptionPools(structure, config) {
 /**
  * CORRECTION DE L'ERREUR buildDissocCountMap
  */
+
+// ====================
+// Gestion des quotas (Phase 4)
+// ====================
+
+let __phase4QuotaSuffixesCache = null;
+let __phase4CombinedConstraintTokensCache = {};
+
+function _getQuotaSuffixesForPhase4_() {
+    if (__phase4QuotaSuffixesCache) {
+        return __phase4QuotaSuffixesCache;
+    }
+
+    const suffixes = ['CACHE', 'TEST'];
+    try {
+        if (typeof getConfig === 'function') {
+            const cfg = getConfig();
+            const maybePush = (val) => {
+                if (val) {
+                    const clean = String(val).trim().toUpperCase();
+                    if (clean && suffixes.indexOf(clean) === -1) {
+                        suffixes.push(clean);
+                    }
+                }
+            };
+            maybePush(cfg?.TEST_SUFFIX);
+            maybePush(cfg?.CACHE_SUFFIX);
+        }
+    } catch (err) {
+        // Ignorer : on retombe sur les suffixes par défaut
+    }
+
+    __phase4QuotaSuffixesCache = suffixes;
+    return __phase4QuotaSuffixesCache;
+}
+
+function _normalizeClassNameForQuotas_(className) {
+    if (!className) return '';
+    let normalized = String(className).trim().toUpperCase();
+    const suffixes = _getQuotaSuffixesForPhase4_();
+    suffixes.forEach(function(suf) {
+        if (suf && normalized.endsWith(suf)) {
+            normalized = normalized.slice(0, -suf.length);
+        }
+    });
+    return normalized;
+}
+
+function _normalizeConstraintKeyForQuotas_(raw) {
+    if (!raw) return '';
+    const rawStr = String(raw).trim();
+    if (!rawStr) return '';
+
+    if (typeof normalizeOptionTag_ === 'function') {
+        const normalized = normalizeOptionTag_(rawStr);
+        if (normalized) {
+            return String(normalized).trim().toUpperCase();
+        }
+    }
+
+    let key = rawStr.toUpperCase();
+    key = key.replace(/^(LV2|OPT|OPTION)\s*[:\-]?/i, '');
+    key = key.replace(/\(.*?\)/g, '');
+    key = key.replace(/\d+$/g, '');
+    key = key.replace(/[\s._-]+/g, '');
+    return key;
+}
+
+function _normalizeCombinedConstraintKeyForQuotas_(raw) {
+    if (!raw) return '';
+    const inside = String(raw).replace(/[\[\]]/g, '');
+    const parts = inside.split(/[+&]/);
+    const normalizedParts = [];
+
+    parts.forEach(function(part) {
+        const normalized = _normalizeConstraintKeyForQuotas_(part);
+        if (normalized) {
+            normalizedParts.push(normalized);
+        }
+    });
+
+    if (normalizedParts.length < 2) {
+        return '';
+    }
+
+    const uniqueSorted = Array.from(new Set(normalizedParts)).sort();
+    return uniqueSorted.join('+');
+}
+
+function _getCombinedConstraintTokens_(comboKey) {
+    if (!comboKey) return [];
+    if (__phase4CombinedConstraintTokensCache[comboKey]) {
+        return __phase4CombinedConstraintTokensCache[comboKey].slice();
+    }
+
+    const tokens = comboKey.split('+').map(function(part) {
+        return _normalizeConstraintKeyForQuotas_(part);
+    }).filter(Boolean);
+
+    __phase4CombinedConstraintTokensCache[comboKey] = tokens;
+    return tokens.slice();
+}
+
+function _buildQuotaMapFromStructure_(structureData) {
+    const quotas = {};
+    __phase4CombinedConstraintTokensCache = {};
+    if (!structureData || !Array.isArray(structureData.classes)) {
+        return quotas;
+    }
+
+    structureData.classes.forEach(function(cls) {
+        if (!cls || !cls.nom) return;
+        const classKey = _normalizeClassNameForQuotas_(cls.nom);
+        if (!classKey) return;
+
+        const options = Array.isArray(cls.options) ? cls.options : [];
+        options.forEach(function(optStr) {
+            if (!optStr) return;
+            const part = String(optStr).trim();
+            if (!part) return;
+
+            const combinedMatch = part.match(/^\[([^\]]+)\]\s*(?:=|:)\s*(-?\d+)/);
+            if (combinedMatch) {
+                const comboKey = _normalizeCombinedConstraintKeyForQuotas_(combinedMatch[1]);
+                const value = parseInt(combinedMatch[2], 10);
+                if (!comboKey || isNaN(value) || value < 0) {
+                    return;
+                }
+
+                if (!quotas[classKey]) {
+                    quotas[classKey] = {};
+                }
+                quotas[classKey][comboKey] = (quotas[classKey][comboKey] || 0) + value;
+                return;
+            }
+
+            const piecesEq = part.split('=');
+            const piecesColon = part.split(':');
+            const pieces = (piecesEq.length >= 2) ? piecesEq : ((piecesColon.length >= 2) ? piecesColon : null);
+            if (!pieces) return;
+
+            const optionKey = _normalizeConstraintKeyForQuotas_(pieces[0]);
+            if (!optionKey) return;
+
+            const value = parseInt(pieces[1], 10);
+            if (isNaN(value) || value < 0) return;
+
+            if (!quotas[classKey]) {
+                quotas[classKey] = {};
+            }
+            quotas[classKey][optionKey] = (quotas[classKey][optionKey] || 0) + value;
+        });
+    });
+
+    return quotas;
+}
+
+function _getQuotaMapFromStructure_(structureData) {
+    if (!structureData) return {};
+    if (!structureData.__quotaMapCache) {
+        structureData.__quotaMapCache = _buildQuotaMapFromStructure_(structureData);
+    }
+    return structureData.__quotaMapCache;
+}
+
+function _getStudentConstraintsForQuotas_(student, quotasForClass) {
+    if (!student) return [];
+
+    const optCandidates = [];
+    if (student.optionKey) optCandidates.push(student.optionKey);
+    if (student.OPT) optCandidates.push(student.OPT);
+
+    const simpleSet = new Set();
+
+    optCandidates.forEach(function(raw) {
+        const normalized = _normalizeConstraintKeyForQuotas_(raw);
+        if (normalized) {
+            simpleSet.add(normalized);
+        }
+    });
+
+    const lv2Normalized = _normalizeConstraintKeyForQuotas_(student.LV2);
+    if (lv2Normalized && lv2Normalized !== 'ESP') {
+        simpleSet.add(lv2Normalized);
+    }
+
+    const finalSet = new Set(simpleSet);
+
+    if (quotasForClass) {
+        Object.keys(quotasForClass).forEach(function(quotaKey) {
+            if (quotaKey.indexOf('+') === -1) return;
+            const tokens = _getCombinedConstraintTokens_(quotaKey);
+            if (!tokens.length) return;
+            const satisfied = tokens.every(function(token) {
+                return simpleSet.has(token);
+            });
+            if (satisfied) {
+                finalSet.add(quotaKey);
+            }
+        });
+    }
+
+    return Array.from(finalSet);
+}
+
+function _countConstraintsForClass_(students, quotasForClass) {
+    const counts = {};
+    (students || []).forEach(function(stu) {
+        const constraints = _getStudentConstraintsForQuotas_(stu, quotasForClass);
+        constraints.forEach(function(c) {
+            counts[c] = (counts[c] || 0) + 1;
+        });
+    });
+    return counts;
+}
+
+function _getStudentsForClass_(classesMap, className) {
+    if (!classesMap || !className) return [];
+    if (classesMap[className]) return classesMap[className];
+
+    const upper = String(className).trim().toUpperCase();
+    if (classesMap[upper]) return classesMap[upper];
+
+    const lower = String(className).trim().toLowerCase();
+    if (classesMap[lower]) return classesMap[lower];
+
+    for (const key in classesMap) {
+        if (Object.prototype.hasOwnProperty.call(classesMap, key)) {
+            if (String(key).trim().toUpperCase() === upper) {
+                return classesMap[key];
+            }
+        }
+    }
+    return [];
+}
+
+function _adjustCountsForConstraints_(counts, constraints, delta) {
+    constraints.forEach(function(constraint) {
+        counts[constraint] = (counts[constraint] || 0) + delta;
+        if (counts[constraint] < 0) {
+            counts[constraint] = 0;
+        }
+    });
+}
+
+function _wouldExceedQuotaAfterSwap_(counts, quotas, classDisplayName) {
+    if (!quotas) return false;
+    for (const constraint in quotas) {
+        if (!Object.prototype.hasOwnProperty.call(quotas, constraint)) continue;
+        const limit = quotas[constraint];
+        if (typeof limit !== 'number') continue;
+        const value = counts[constraint] || 0;
+        if (value > limit) {
+            Logger.log(`respecteContraintes: REJET - Quota ${constraint} dépassé pour ${classDisplayName} (${value} > ${limit}).`);
+            return true;
+        }
+    }
+    return false;
+}
 
 // 1. Version SÉCURISÉE de buildDissocCountMap
 function buildDissocCountMap(classesMap) {
@@ -1488,61 +1747,54 @@ function respecteContraintes(e1, e2, allStudents, structureData, optionsNiveauDa
     
     // Pour élève 1
     if (e1.optionKey && String(e1.optionKey).trim() !== '') {
-        // L'élève a une option, on doit vérifier seulement s'il est PERMUT ou CONDI
-        if (mobilite1 === 'PERMUT' || mobilite1 === 'CONDI') {
-            const normalizedOptionKeyE1 = String(e1.optionKey).trim().toUpperCase();
-            const poolE1 = optionPools[normalizedOptionKeyE1];
-            
-            Logger.log(`respecteContraintes: e1 (${e1.ID_ELEVE}) est ${mobilite1} AVEC Option '${normalizedOptionKeyE1}'.`);
-            
-            if (!poolE1 || !Array.isArray(poolE1) || poolE1.length === 0) {
-                Logger.log(`respecteContraintes: REJET e1 - Aucun pool pour option '${normalizedOptionKeyE1}'.`);
-                return false;
-            }
-            if (!poolE1.includes(dest1ClassePourPool)) {
-                Logger.log(`respecteContraintes: REJET e1 - Option '${normalizedOptionKeyE1}' non disponible dans ${dest1ClassePourPool}.`);
-                return false;
-            }
+        const rawOptionKeyE1 = String(e1.optionKey).trim().toUpperCase();
+        const normalizedOptionKeyE1 = _normalizeConstraintKeyForQuotas_(rawOptionKeyE1);
+        const poolE1 = optionPools[normalizedOptionKeyE1] || optionPools[rawOptionKeyE1];
+
+        Logger.log(`respecteContraintes: e1 (${e1.ID_ELEVE}) option '${normalizedOptionKeyE1 || rawOptionKeyE1}'.`);
+
+        if (!poolE1 || !Array.isArray(poolE1) || poolE1.length === 0) {
+            Logger.log(`respecteContraintes: REJET e1 - Aucun pool pour option '${normalizedOptionKeyE1 || rawOptionKeyE1}'.`);
+            return false;
         }
-        // Si LIBRE avec option, pas de contrainte
-    }
-    // Si pas d'option, pas de contrainte liée aux options !
-    
-    // Pour élève 2
-    if (e2.optionKey && String(e2.optionKey).trim() !== '') {
-        if (mobilite2 === 'PERMUT' || mobilite2 === 'CONDI') {
-            const normalizedOptionKeyE2 = String(e2.optionKey).trim().toUpperCase();
-            const poolE2 = optionPools[normalizedOptionKeyE2];
-            
-            Logger.log(`respecteContraintes: e2 (${e2.ID_ELEVE}) est ${mobilite2} AVEC Option '${normalizedOptionKeyE2}'.`);
-            
-            if (!poolE2 || !Array.isArray(poolE2) || poolE2.length === 0) {
-                Logger.log(`respecteContraintes: REJET e2 - Aucun pool pour option '${normalizedOptionKeyE2}'.`);
-                return false;
-            }
-            if (!poolE2.includes(dest2ClassePourPool)) {
-                Logger.log(`respecteContraintes: REJET e2 - Option '${normalizedOptionKeyE2}' non disponible dans ${dest2ClassePourPool}.`);
-                return false;
-            }
-        }
-    }
-    
-    // ========== AJOUT : Vérification LV2 pour ITA ==========
-    // Si un élève a ITA comme LV2, vérifier qu'il peut aller dans une classe qui accepte ITA
-    
-    if (e1.LV2 && String(e1.LV2).toUpperCase() === 'ITA' && (mobilite1 === 'PERMUT' || mobilite1 === 'CONDI')) {
-        // Vérifier si la classe destination accepte ITA
-        const poolITA = optionPools['ITA']; // ITA est dans les pools car c'est dans _STRUCTURE
-        if (poolITA && !poolITA.includes(dest1ClassePourPool)) {
-            Logger.log(`respecteContraintes: REJET e1 - LV2 ITA non disponible dans ${dest1ClassePourPool}.`);
+        if (!poolE1.includes(dest1ClassePourPool)) {
+            Logger.log(`respecteContraintes: REJET e1 - Option '${normalizedOptionKeyE1 || rawOptionKeyE1}' non disponible dans ${dest1ClassePourPool}.`);
             return false;
         }
     }
-    
-    if (e2.LV2 && String(e2.LV2).toUpperCase() === 'ITA' && (mobilite2 === 'PERMUT' || mobilite2 === 'CONDI')) {
-        const poolITA = optionPools['ITA'];
-        if (poolITA && !poolITA.includes(dest2ClassePourPool)) {
-            Logger.log(`respecteContraintes: REJET e2 - LV2 ITA non disponible dans ${dest2ClassePourPool}.`);
+
+    if (e2.optionKey && String(e2.optionKey).trim() !== '') {
+        const rawOptionKeyE2 = String(e2.optionKey).trim().toUpperCase();
+        const normalizedOptionKeyE2 = _normalizeConstraintKeyForQuotas_(rawOptionKeyE2);
+        const poolE2 = optionPools[normalizedOptionKeyE2] || optionPools[rawOptionKeyE2];
+
+        Logger.log(`respecteContraintes: e2 (${e2.ID_ELEVE}) option '${normalizedOptionKeyE2 || rawOptionKeyE2}'.`);
+
+        if (!poolE2 || !Array.isArray(poolE2) || poolE2.length === 0) {
+            Logger.log(`respecteContraintes: REJET e2 - Aucun pool pour option '${normalizedOptionKeyE2 || rawOptionKeyE2}'.`);
+            return false;
+        }
+        if (!poolE2.includes(dest2ClassePourPool)) {
+            Logger.log(`respecteContraintes: REJET e2 - Option '${normalizedOptionKeyE2 || rawOptionKeyE2}' non disponible dans ${dest2ClassePourPool}.`);
+            return false;
+        }
+    }
+
+    // ========== Vérification LV2 (ITA, etc.) ==========
+    const normalizedLv2E1 = _normalizeConstraintKeyForQuotas_(e1.LV2);
+    if (normalizedLv2E1 && normalizedLv2E1 !== 'ESP') {
+        const poolLV2E1 = optionPools[normalizedLv2E1] || optionPools[String(e1.LV2 || '').trim().toUpperCase()];
+        if (poolLV2E1 && !poolLV2E1.includes(dest1ClassePourPool)) {
+            Logger.log(`respecteContraintes: REJET e1 - LV2 ${normalizedLv2E1} non disponible dans ${dest1ClassePourPool}.`);
+            return false;
+        }
+    }
+
+    const normalizedLv2E2 = _normalizeConstraintKeyForQuotas_(e2.LV2);
+    if (normalizedLv2E2 && normalizedLv2E2 !== 'ESP') {
+        const poolLV2E2 = optionPools[normalizedLv2E2] || optionPools[String(e2.LV2 || '').trim().toUpperCase()];
+        if (poolLV2E2 && !poolLV2E2.includes(dest2ClassePourPool)) {
+            Logger.log(`respecteContraintes: REJET e2 - LV2 ${normalizedLv2E2} non disponible dans ${dest2ClassePourPool}.`);
             return false;
         }
     }
@@ -1561,18 +1813,52 @@ function respecteContraintes(e1, e2, allStudents, structureData, optionsNiveauDa
         }
     }
     
-    if (dissocKeyE2Trimmed) { 
+    if (dissocKeyE2Trimmed) {
         const dissocInDest2 = dissocMap[e1.CLASSE];
-        if (dissocInDest2 instanceof Set && 
-            dissocInDest2.has(dissocKeyE2Trimmed) && 
+        if (dissocInDest2 instanceof Set &&
+            dissocInDest2.has(dissocKeyE2Trimmed) &&
             dissocKeyE1Trimmed !== dissocKeyE2Trimmed) {
             Logger.log(`respecteContraintes: REJET e2 - Contrainte DISSO '${dissocKeyE2Trimmed}' vers ${e1.CLASSE}.`);
-            return false; 
+            return false;
         }
     }
-    
+
+    // Vérification quotas (ITA/CHAV...) pour éviter dépassements après swap
+    const quotaMap = _getQuotaMapFromStructure_(structureData);
+    const quotaKeyClasse1 = _normalizeClassNameForQuotas_(e1.CLASSE);
+    const quotaKeyClasse2 = _normalizeClassNameForQuotas_(e2.CLASSE);
+    const quotasClasse1 = quotaMap[quotaKeyClasse1];
+    const quotasClasse2 = quotaMap[quotaKeyClasse2];
+
+    if ((quotasClasse1 && Object.keys(quotasClasse1).length) || (quotasClasse2 && Object.keys(quotasClasse2).length)) {
+        const classe1Students = _getStudentsForClass_(classesMap, e1.CLASSE);
+        const classe2Students = _getStudentsForClass_(classesMap, e2.CLASSE);
+
+        const countsClasse1 = _countConstraintsForClass_(classe1Students, quotasClasse1);
+        const countsClasse2 = _countConstraintsForClass_(classe2Students, quotasClasse2);
+
+        const contraintesE1Classe1 = _getStudentConstraintsForQuotas_(e1, quotasClasse1);
+        const contraintesE2Classe2 = _getStudentConstraintsForQuotas_(e2, quotasClasse2);
+
+        _adjustCountsForConstraints_(countsClasse1, contraintesE1Classe1, -1);
+        _adjustCountsForConstraints_(countsClasse2, contraintesE2Classe2, -1);
+
+        const contraintesE2DansClasse1 = _getStudentConstraintsForQuotas_(e2, quotasClasse1);
+        const contraintesE1DansClasse2 = _getStudentConstraintsForQuotas_(e1, quotasClasse2);
+
+        _adjustCountsForConstraints_(countsClasse1, contraintesE2DansClasse1, +1);
+        _adjustCountsForConstraints_(countsClasse2, contraintesE1DansClasse2, +1);
+
+        if (_wouldExceedQuotaAfterSwap_(countsClasse1, quotasClasse1, e1.CLASSE)) {
+            return false;
+        }
+        if (_wouldExceedQuotaAfterSwap_(countsClasse2, quotasClasse2, e2.CLASSE)) {
+            return false;
+        }
+    }
+
     Logger.log(`--- respecteContraintes: ACCEPTÉ pour ${e1.ID_ELEVE} et ${e2.ID_ELEVE} ---`);
-    return true; 
+    return true;
 }
 
 // 2. Version CORRIGÉE de analyserContraintesDetaillees
