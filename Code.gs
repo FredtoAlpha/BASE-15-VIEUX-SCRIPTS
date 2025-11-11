@@ -318,6 +318,14 @@ function legacy_runFullPipeline() {
       : null;
     if (!ctx) throw new Error('makeCtxFromSourceSheets_() non trouvée');
 
+    // ✅ FIX: Créer les onglets TEST avant de lancer les phases
+    SpreadsheetApp.getActiveSpreadsheet().toast('Création onglets TEST...', 'Initialisation', -1);
+    if (typeof initEmptyCacheTabs_ === 'function') {
+      initEmptyCacheTabs_(ctx);
+    } else {
+      throw new Error('initEmptyCacheTabs_() non trouvée');
+    }
+
     // Phase 1
     SpreadsheetApp.getActiveSpreadsheet().toast('Phase 1/4...', 'Options & LV2', -1);
     if (typeof Phase1I_dispatchOptionsLV2_ === 'function') {

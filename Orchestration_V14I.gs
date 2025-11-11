@@ -51,8 +51,17 @@ function makeCtxFromSourceSheets_() {
   sourceSheets.sort();
   logLine('INFO', `📋 Onglets sources détectés: ${sourceSheets.join(', ')}`);
 
-  // Générer les noms d'onglets TEST (destinations)
+  // ✅ Lire le mapping CLASSE_ORIGINE → CLASSE_DEST depuis _STRUCTURE
+  const sourceToDestMapping = readSourceToDestMapping_();
+
+  // Générer les noms d'onglets TEST (destinations) en utilisant le mapping
   const testSheets = sourceSheets.map(name => {
+    // Si le mapping existe pour cette source, utiliser la destination mappée
+    if (sourceToDestMapping[name]) {
+      return sourceToDestMapping[name] + 'TEST';
+    }
+
+    // Sinon, fallback sur l'ancien comportement
     // Extraire le niveau (6°, 5°, etc.)
     const match = name.match(/([3-6]°\d+)/);
     if (match) {
@@ -64,6 +73,11 @@ function makeCtxFromSourceSheets_() {
       return '6°' + matchEcole[1] + 'TEST';
     }
     return name + 'TEST';
+  });
+
+  // Générer aussi les niveaux de destination (sans suffixe TEST)
+  const niveauxDest = sourceSheets.map(name => {
+    return sourceToDestMapping[name] || name;
   });
 
   logLine('INFO', `📋 Onglets TEST à créer: ${testSheets.join(', ')}`);
@@ -85,11 +99,12 @@ function makeCtxFromSourceSheets_() {
 
   return {
     ss,
-    modeSrc: 'SOURCES',  // Mode spécial pour sources sans suffixe
+    modeSrc: '',  // ✅ FIX: Mode vide pour LEGACY car les sources n'ont pas de suffixe
     writeTarget: 'TEST',
-    niveaux: sourceSheets,  // Les noms réels des onglets sources
-    srcSheets: sourceSheets,  // Pas de transformation, on lit directement
-    cacheSheets: testSheets,  // Les onglets TEST à créer
+    niveaux: niveauxDest,  // ✅ FIX: Les niveaux de destination (5°1, 5°2, etc.)
+    srcSheets: sourceSheets,  // Les onglets sources réels (6°1, 6°2, etc.)
+    cacheSheets: testSheets,  // Les onglets TEST à créer (5°1TEST, 5°2TEST, etc.)
+    sourceToDestMapping,  // ✅ Ajout du mapping pour utilisation dans les phases
     quotas,
     targets,
     tolParite,
@@ -525,6 +540,69 @@ function readQuotasFromStructure_(sheet) {
 }
 
 /**
+ * Lit le mapping CLASSE_ORIGINE → CLASSE_DEST depuis _STRUCTURE
+ * @returns {Object} Mapping { "6°1": "5°1", "6°2": "5°2", ... }
+ */
+function readSourceToDestMapping_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const structSheet = ss.getSheetByName('_STRUCTURE');
+  const mapping = {};
+
+  if (!structSheet) {
+    return mapping;
+  }
+
+  try {
+    const data = structSheet.getDataRange().getValues();
+
+    // Recherche de l'en-tête
+    let headerRow = -1;
+    for (let i = 0; i < Math.min(20, data.length); i++) {
+      const row = data[i];
+      for (let j = 0; j < row.length; j++) {
+        const cell = String(row[j] || '').trim().toUpperCase();
+        if (cell === 'CLASSE_DEST' || cell === 'CLASSE_ORIGINE') {
+          headerRow = i;
+          break;
+        }
+      }
+      if (headerRow !== -1) break;
+    }
+
+    if (headerRow === -1) {
+      logLine('WARN', '⚠️ En-têtes non trouvés dans _STRUCTURE');
+      return mapping;
+    }
+
+    const headers = data[headerRow];
+    const origineCol = headers.indexOf('CLASSE_ORIGINE');
+    const destCol = headers.indexOf('CLASSE_DEST');
+
+    if (origineCol === -1 || destCol === -1) {
+      logLine('WARN', '⚠️ Colonnes CLASSE_ORIGINE ou CLASSE_DEST introuvables');
+      return mapping;
+    }
+
+    // Lire le mapping
+    for (let i = headerRow + 1; i < data.length; i++) {
+      const row = data[i];
+      const origine = String(row[origineCol] || '').trim();
+      const dest = String(row[destCol] || '').trim();
+
+      if (origine && dest) {
+        mapping[origine] = dest;
+        logLine('INFO', '  📌 Mapping: ' + origine + ' → ' + dest);
+      }
+    }
+
+  } catch (e) {
+    logLine('WARN', 'Erreur lecture mapping depuis _STRUCTURE : ' + e.message);
+  }
+
+  return mapping;
+}
+
+/**
  * Lit les cibles d'effectifs par classe depuis l'interface
  * ✅ Lit depuis _STRUCTURE si disponible
  */
@@ -752,7 +830,18 @@ function readElevesFromSelectedMode_(ctx) {
     }
 
     const eleves = readElevesFromSheet_(sheet);
-    const niveau = sheetName.replace(ctx.modeSrc || 'TEST', '');
+
+    // ✅ FIX: Utiliser le mapping pour obtenir le nom de classe de destination
+    let niveau;
+    if (ctx.sourceToDestMapping && ctx.sourceToDestMapping[sheetName]) {
+      // Mode LEGACY avec mapping : utiliser la destination
+      niveau = ctx.sourceToDestMapping[sheetName];
+      logLine('INFO', '  📌 Lecture ' + sheetName + ' → assignation à ' + niveau);
+    } else {
+      // Mode normal : retirer le suffixe
+      niveau = sheetName.replace(ctx.modeSrc || 'TEST', '');
+    }
+
     classesState[niveau] = eleves;
   }
 
