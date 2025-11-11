@@ -585,20 +585,42 @@ function isEleveMobile_(stu) {
 }
 
 /**
+ * ✅ Normalise un tag d'option ou LV2 (copie depuis OptiConfig_System.gs)
+ * Voir normalizeOptionTag_() pour documentation complète
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let tag = String(raw).trim().toUpperCase();
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+  tag = tag.replace(/\(.*?\)/g, '');
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, '');
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+  const synonyms = {
+    'ITALIEN': 'ITA', 'ITALIE': 'ITA', 'ESPAGNOL': 'ESP', 'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL', 'ALLEMAGNE': 'ALL', 'CHINOIS': 'CHI', 'CHINE': 'CHI',
+    'LATIN': 'LAT', 'GREC': 'GRE', 'PORTUGUAIS': 'PT', 'PORTUGAL': 'PT',
+    'CHEVAL': 'CHAV'
+  };
+  return synonyms[tag] || tag;
+}
+
+/**
  * Vérifie si un swap est faisable (quotas, groupes)
  * ✅ FIX CRITIQUE: Bloque les swaps qui violent les contraintes OPT/LV2
+ * ✅ CORRECTION NORMALISATION : Applique normalizeOptionTag_() avant comparaison
  */
 function isSwapFeasible_(stu1, stu2, cls1, cls2, ctx) {
   // ===== 1. VÉRIFIER QUOTAS LV2/OPT =====
   // ✅ RÈGLE: Un élève avec OPT/LV2 NE PEUT ÊTRE DÉPLACÉ que vers une classe qui propose cette option
 
-  // Extraire OPT/LV2 des deux élèves
-  const opt1 = String(stu1.OPT || '').trim().toUpperCase();
-  const lv21 = String(stu1.LV2 || '').trim().toUpperCase();
-  const opt2 = String(stu2.OPT || '').trim().toUpperCase();
-  const lv22 = String(stu2.LV2 || '').trim().toUpperCase();
+  // Extraire OPT/LV2 des deux élèves et NORMALISER
+  const opt1 = normalizeOptionTag_(String(stu1.OPT || '').trim());
+  const lv21 = normalizeOptionTag_(String(stu1.LV2 || '').trim());
+  const opt2 = normalizeOptionTag_(String(stu2.OPT || '').trim());
+  const lv22 = normalizeOptionTag_(String(stu2.LV2 || '').trim());
 
-  // Récupérer les quotas configurés depuis ctx
+  // Récupérer les quotas configurés depuis ctx (DÉJÀ NORMALISÉS par buildCtx_V2)
   const quotas = ctx.quotas || {};
   const quotasCls1 = quotas[cls1] || {};
   const quotasCls2 = quotas[cls2] || {};

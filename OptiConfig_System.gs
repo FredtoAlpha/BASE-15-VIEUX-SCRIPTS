@@ -556,6 +556,71 @@ function getOptimizationProfileFromUI() {
 }
 
 // ===================================================================
+// SECTION 3.5 : NORMALISATION DES TAGS OPTIONS/LV2
+// ===================================================================
+
+/**
+ * ✅ Normalise un tag d'option ou LV2 pour assurer cohérence
+ * Règles :
+ * 1. Supprime préfixes courants (LV2, OPTION, OPT, etc.)
+ * 2. Supprime chiffres finaux et espaces (CHAV 2 → CHAV, ITA 7 → ITA)
+ * 3. Supprime parenthèses et caractères spéciaux
+ * 4. Harmonise synonymes (ITALIEN → ITA, ESPAGNOL → ESP, etc.)
+ * 5. Retourne code canonique en MAJUSCULES
+ *
+ * Exemples :
+ * - "CHAV 2" → "CHAV"
+ * - "LV2-ITA" → "ITA"
+ * - "OPTION(CHAV)" → "CHAV"
+ * - "ITA 7" → "ITA"
+ * - "ITALIEN" → "ITA"
+ *
+ * @param {string} raw - Tag brut depuis élève ou quota
+ * @returns {string} Tag normalisé (ex: "CHAV", "ITA", "ALL", "LAT")
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+
+  let tag = String(raw).trim().toUpperCase();
+
+  // 1. Supprimer préfixes courants
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+
+  // 2. Supprimer parenthèses et contenu entre parenthèses
+  tag = tag.replace(/\(.*?\)/g, '');
+
+  // 3. Supprimer chiffres finaux et espaces (CHAV 2 → CHAV, ITA 7 → ITA)
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, ''); // Au cas où pas d'espace (CHAV2 → CHAV)
+
+  // 4. Nettoyer caractères spéciaux résiduels
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+
+  // 5. Harmoniser synonymes courants
+  const synonyms = {
+    'ITALIEN': 'ITA',
+    'ITALIE': 'ITA',
+    'ESPAGNOL': 'ESP',
+    'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL',
+    'ALLEMAGNE': 'ALL',
+    'CHINOIS': 'CHI',
+    'CHINE': 'CHI',
+    'LATIN': 'LAT',
+    'GREC': 'GRE',
+    'PORTUGUAIS': 'PT',
+    'PORTUGAL': 'PT',
+    'CHEVAL': 'CHAV' // Équitation
+  };
+
+  if (synonyms[tag]) {
+    tag = synonyms[tag];
+  }
+
+  return tag;
+}
+
+// ===================================================================
 // SECTION 4 : CONSTRUCTION CONTEXTE POUR PHASES (V2)
 // ===================================================================
 
@@ -624,16 +689,24 @@ function readQuotasFromStructureV2_() {
     
     quotas[classeDest] = {};
     
-    // Parser OPTIONS (format: "ITA=6,CHAV=10,LATIN=3")
+    // Parser OPTIONS (format: "ITA=6,CHAV 2=10,LATIN=3")
+    // ✅ NORMALISATION : Applique normalizeOptionTag_() pour cohérence avec élèves
     if (optionsStr) {
       const pairs = optionsStr.split(',');
       pairs.forEach(function(pair) {
         const parts = pair.trim().split('=');
         if (parts.length === 2) {
-          const key = parts[0].trim().toUpperCase();
+          const rawKey = parts[0].trim();
+          const normalizedKey = normalizeOptionTag_(rawKey); // ✅ NORMALISATION (CHAV 2 → CHAV)
           const value = parseInt(parts[1].trim()) || 0;
-          if (value > 0) {
-            quotas[classeDest][key] = value;
+          if (value > 0 && normalizedKey) {
+            // ✅ Additionner si plusieurs quotas se normalisent vers la même clé (CHAV 1=5, CHAV 2=2 → CHAV=7)
+            quotas[classeDest][normalizedKey] = (quotas[classeDest][normalizedKey] || 0) + value;
+
+            // ✅ LOG pour traçabilité
+            if (rawKey !== normalizedKey) {
+              logLine('DEBUG', '  🔄 Normalisation: "' + rawKey + '" → "' + normalizedKey + '" (quota=' + value + ')');
+            }
           }
         }
       });
