@@ -1023,14 +1023,32 @@ function writeToCache_(ctx, baseClass, values) {
 function Phase1I_dispatchOptionsLV2_(ctx) {
   const warnings = [];
 
-  // Lire les élèves depuis la source sélectionnée
-  const eleves = readElevesFromSelectedMode_(ctx);
+  // ✅ OPTIMISATION : Lire depuis l'onglet CONSOLIDATION (regroupe tous les élèves)
+  // Plus simple et plus rapide qu'une lecture multi-sources
+  const consolidationSheet = ctx.ss.getSheetByName('CONSOLIDATION');
+  if (!consolidationSheet) {
+    logLine('ERROR', 'Onglet CONSOLIDATION introuvable ! Impossible de continuer.');
+    return {
+      ok: false,
+      warnings: ['CONSOLIDATION introuvable'],
+      counts: {}
+    };
+  }
 
-  // Affecter les options et LV2
-  const { classesState, stats, warn } = assignOptionsThenLV2_(
-    eleves,
+  const poolGlobal = readElevesFromSheet_(consolidationSheet);
+  logLine('INFO', 'Phase 1 : Pool global de ' + poolGlobal.length + ' élèves (depuis CONSOLIDATION)');
+
+  // Créer les classes destination VIDES
+  const classesState = {};
+  for (const niveau of ctx.niveaux) {
+    classesState[niveau] = [];
+  }
+
+  // Dispatcher les élèves selon quotas LV2/OPT
+  const { stats, warn } = dispatchElevesWithQuotas_(
+    poolGlobal,
+    classesState,
     ctx.quotas,
-    ctx.autorisations,
     ctx.niveaux
   );
 
@@ -1047,7 +1065,179 @@ function Phase1I_dispatchOptionsLV2_(ctx) {
 }
 
 /**
- * Affecte les options puis les LV2
+ * ✅ NOUVELLE LOGIQUE : Dispatcher les élèves depuis le pool global vers les classes
+ * selon les quotas LV2/OPT définis dans _STRUCTURE
+ *
+ * RÈGLE : Non-ESP prioritaires (comme dit par le user)
+ */
+function dispatchElevesWithQuotas_(poolGlobal, classesState, quotas, niveaux) {
+  const warn = [];
+  const stats = {
+    ITA: 0,
+    CHAV: 0,
+    LATIN: 0,
+    ESP: 0,
+    ALL: 0,
+    PT: 0
+  };
+
+  // Marquer tous les élèves comme non assignés
+  poolGlobal.forEach(function(e) { e._ASSIGNED = false; });
+
+  // Pour chaque classe, dispatcher les élèves selon les quotas
+  for (const niveau of niveaux) {
+    const quota = quotas[niveau] || {};
+
+    // 1. Dispatcher ITA (LV2)
+    if (quota.ITA && quota.ITA > 0) {
+      const elevesITA = poolGlobal.filter(function(e) {
+        return !e._ASSIGNED && String(e.LV2 || '').trim().toUpperCase() === 'ITA';
+      });
+
+      const assigned = Math.min(elevesITA.length, quota.ITA);
+      for (let i = 0; i < assigned; i++) {
+        elevesITA[i]._ASSIGNED = true;
+        classesState[niveau].push(elevesITA[i]);
+      }
+      stats.ITA += assigned;
+
+      if (assigned < quota.ITA) {
+        warn.push('Classe ' + niveau + ' : Seulement ' + assigned + ' ITA affectés sur ' + quota.ITA + ' demandés');
+      }
+      logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves ITA placés');
+    }
+
+    // 2. Dispatcher CHAV (OPT)
+    if (quota.CHAV && quota.CHAV > 0) {
+      const elevesCHAV = poolGlobal.filter(function(e) {
+        return !e._ASSIGNED && String(e.OPT || '').trim().toUpperCase() === 'CHAV';
+      });
+
+      const assigned = Math.min(elevesCHAV.length, quota.CHAV);
+      for (let i = 0; i < assigned; i++) {
+        elevesCHAV[i]._ASSIGNED = true;
+        classesState[niveau].push(elevesCHAV[i]);
+      }
+      stats.CHAV += assigned;
+
+      if (assigned < quota.CHAV) {
+        warn.push('Classe ' + niveau + ' : Seulement ' + assigned + ' CHAV affectés sur ' + quota.CHAV + ' demandés');
+      }
+      logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves CHAV placés');
+    }
+
+    // 3. Dispatcher LATIN (OPT)
+    if (quota.LATIN && quota.LATIN > 0) {
+      const elevesLATIN = poolGlobal.filter(function(e) {
+        return !e._ASSIGNED && String(e.OPT || '').trim().toUpperCase() === 'LATIN';
+      });
+
+      const assigned = Math.min(elevesLATIN.length, quota.LATIN);
+      for (let i = 0; i < assigned; i++) {
+        elevesLATIN[i]._ASSIGNED = true;
+        classesState[niveau].push(elevesLATIN[i]);
+      }
+      stats.LATIN += assigned;
+
+      if (assigned < quota.LATIN) {
+        warn.push('Classe ' + niveau + ' : Seulement ' + assigned + ' LATIN affectés sur ' + quota.LATIN + ' demandés');
+      }
+      logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves LATIN placés');
+    }
+
+    // 4. Dispatcher ESP (LV2) si quota défini
+    if (quota.ESP && quota.ESP > 0) {
+      const elevesESP = poolGlobal.filter(function(e) {
+        return !e._ASSIGNED && String(e.LV2 || '').trim().toUpperCase() === 'ESP';
+      });
+
+      const assigned = Math.min(elevesESP.length, quota.ESP);
+      for (let i = 0; i < assigned; i++) {
+        elevesESP[i]._ASSIGNED = true;
+        classesState[niveau].push(elevesESP[i]);
+      }
+      stats.ESP += assigned;
+      logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves ESP placés');
+    }
+
+    // 5. Dispatcher ALL (LV2) si quota défini
+    if (quota.ALL && quota.ALL > 0) {
+      const elevesALL = poolGlobal.filter(function(e) {
+        return !e._ASSIGNED && String(e.LV2 || '').trim().toUpperCase() === 'ALL';
+      });
+
+      const assigned = Math.min(elevesALL.length, quota.ALL);
+      for (let i = 0; i < assigned; i++) {
+        elevesALL[i]._ASSIGNED = true;
+        classesState[niveau].push(elevesALL[i]);
+      }
+      stats.ALL += assigned;
+      logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves ALL placés');
+    }
+
+    // 6. Dispatcher PT (LV2) si quota défini
+    if (quota.PT && quota.PT > 0) {
+      const elevesPT = poolGlobal.filter(function(e) {
+        return !e._ASSIGNED && String(e.LV2 || '').trim().toUpperCase() === 'PT';
+      });
+
+      const assigned = Math.min(elevesPT.length, quota.PT);
+      for (let i = 0; i < assigned; i++) {
+        elevesPT[i]._ASSIGNED = true;
+        classesState[niveau].push(elevesPT[i]);
+      }
+      stats.PT += assigned;
+      logLine('INFO', '  ✅ ' + niveau + ' : ' + assigned + ' élèves PT placés');
+    }
+  }
+
+  // ✅ IMPORTANT : Dispatcher les élèves restants (non assignés) de manière équilibrée
+  // pour atteindre les effectifs cibles
+  const nonAssignes = poolGlobal.filter(function(e) { return !e._ASSIGNED; });
+  logLine('INFO', 'Phase 1 : ' + nonAssignes.length + ' élèves restants à placer');
+
+  // Dispatcher les non assignés de manière round-robin pour équilibrer les effectifs
+  let idx = 0;
+  while (nonAssignes.length > 0 && idx < nonAssignes.length) {
+    const eleve = nonAssignes[idx];
+
+    // Trouver la classe avec le moins d'élèves
+    let minClasse = niveaux[0];
+    let minCount = classesState[niveaux[0]].length;
+    for (const niveau of niveaux) {
+      if (classesState[niveau].length < minCount) {
+        minCount = classesState[niveau].length;
+        minClasse = niveau;
+      }
+    }
+
+    // Ajouter l'élève à cette classe
+    classesState[minClasse].push(eleve);
+    eleve._ASSIGNED = true;
+
+    // Retirer de la liste des non assignés
+    nonAssignes.splice(idx, 1);
+  }
+
+  // Nettoyer le flag _ASSIGNED
+  poolGlobal.forEach(function(e) { delete e._ASSIGNED; });
+
+  // Logger les effectifs finaux
+  for (const niveau of niveaux) {
+    logLine('INFO', '  📊 ' + niveau + ' : ' + classesState[niveau].length + ' élèves au total');
+  }
+
+  logLine('INFO', 'Phase 1I stats : ITA=' + stats.ITA + ', CHAV=' + stats.CHAV + ', LATIN=' + stats.LATIN + ', ESP=' + stats.ESP + ', ALL=' + stats.ALL + ', PT=' + stats.PT);
+
+  return {
+    stats: stats,
+    warn: warn
+  };
+}
+
+/**
+ * @deprecated - Remplacée par dispatchElevesWithQuotas_()
+ * Conservée pour compatibilité si besoin
  */
 function assignOptionsThenLV2_(classesState, quotas, autorisations, niveaux) {
   const warn = [];
