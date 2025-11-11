@@ -1593,10 +1593,76 @@ function _wouldExceedQuotaAfterSwap_(counts, quotas, classDisplayName) {
     return false;
 }
 
+function _resolveClassNamesForQuotaKey_(classKey, structureData, classesMap) {
+    const results = [];
+    const seen = new Set();
+
+    function pushIfNew(rawName) {
+        const normalized = String(rawName || '').trim();
+        if (!normalized) return;
+        if (seen.has(normalized)) return;
+        seen.add(normalized);
+        results.push(normalized);
+    }
+
+    if (structureData && Array.isArray(structureData.classes)) {
+        structureData.classes.forEach(function(cls) {
+            if (!cls || !cls.nom) return;
+            if (_normalizeClassNameForQuotas_(cls.nom) === classKey) {
+                pushIfNew(cls.nom);
+            }
+        });
+    }
+
+    if (classesMap && typeof classesMap === 'object') {
+        Object.keys(classesMap).forEach(function(rawName) {
+            if (_normalizeClassNameForQuotas_(rawName) === classKey) {
+                pushIfNew(rawName);
+            }
+        });
+    }
+
+    return results;
+}
+
+function _logPhase4QuotaDiagnostics_(structureData, classesMap) {
+    const logger = (typeof Logger !== 'undefined' && Logger && typeof Logger.log === 'function')
+        ? Logger
+        : (typeof console !== 'undefined' ? console : null);
+    if (!logger || typeof logger.log !== 'function') {
+        return;
+    }
+
+    try {
+        const quotaMap = _getQuotaMapFromStructure_(structureData);
+        const quotaKeys = Object.keys(quotaMap || {});
+        if (!quotaKeys.length) {
+            logger.log('Phase4 - Diagnostic quotas: aucun quota détecté après fusion.');
+            return;
+        }
+
+        logger.log(`Phase4 - Diagnostic quotas: ${quotaKeys.length} classes normalisées détectées.`);
+        quotaKeys.forEach(function(classKey) {
+            const quotas = quotaMap[classKey] || {};
+            const resolvedNames = _resolveClassNamesForQuotaKey_(classKey, structureData, classesMap);
+            const targetNames = resolvedNames.length ? resolvedNames : [classKey];
+
+            targetNames.forEach(function(displayName) {
+                const students = _getStudentsForClass_(classesMap, displayName);
+                const counts = _countConstraintsForClass_(students, quotas);
+                logger.log(`Phase4 - Diagnostic quotas: ${displayName} => quotas ${JSON.stringify(quotas)} | occupation ${JSON.stringify(counts)}.`);
+            });
+        });
+    } catch (err) {
+        const message = err && err.message ? err.message : err;
+        logger.log(`Phase4 - Diagnostic quotas: erreur lors de l'analyse (${message}).`);
+    }
+}
+
 // 1. Version SÉCURISÉE de buildDissocCountMap
 function buildDissocCountMap(classesMap) {
     const dissocMap = {};
-    
+
     // Vérifier que classesMap existe et est un objet
     if (!classesMap || typeof classesMap !== 'object') {
         Logger.log("WARN buildDissocCountMap: classesMap est null/undefined ou n'est pas un objet");
@@ -1897,6 +1963,8 @@ function analyserContraintesDetaillees() {
     
     const optionPools = buildOptionPools(structureResult.structure, config);
     const dissocMap = buildDissocCountMap(elevesResult.classesMap);
+
+    _logPhase4QuotaDiagnostics_(structureResult.structure, elevesResult.classesMap);
     
     // Analyser les élèves par catégorie
     const stats = {
