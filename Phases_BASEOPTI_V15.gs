@@ -55,14 +55,39 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
 
   // ✅ V15 : Charger la matrice de capacités
   logLine('INFO', '🔍 Chargement de la configuration des capacités...');
-  const capabilities = loadClassCapabilities_();
+  let capabilities = loadClassCapabilities_();
 
   if (!capabilities) {
-    logLine('WARN', '⚠️ Aucune configuration de capacités trouvée');
-    throw new Error('❌ V15 requiert une configuration de capacités. Utilisez l\'UI OPTI pour configurer quelles classes offrent quelles options.');
-  }
+    logLine('WARN', '⚠️ Aucune configuration de capacités trouvée - Auto-génération depuis les quotas');
 
-  logLine('INFO', '✅ Capacités chargées pour ' + Object.keys(capabilities).length + ' classe(s)');
+    // ✅ V15 FALLBACK : Auto-détecter les capacités depuis les quotas
+    // Logique : Si une classe a un quota pour une option, elle offre cette option
+    capabilities = {};
+
+    for (const classe in (ctx.quotas || {})) {
+      capabilities[classe] = {};
+
+      // Collecter toutes les options possibles
+      const allOptions = new Set();
+      for (const cls in (ctx.quotas || {})) {
+        for (const opt in ctx.quotas[cls]) {
+          allOptions.add(opt);
+        }
+      }
+
+      // Pour cette classe, marquer comme true les options qu'elle a en quota
+      for (const opt of allOptions) {
+        const hasQuota = ctx.quotas[classe][opt] && ctx.quotas[classe][opt] > 0;
+        capabilities[classe][opt] = hasQuota;
+      }
+    }
+
+    logLine('INFO', '✅ Capacités auto-générées pour ' + Object.keys(capabilities).length + ' classe(s)');
+    logLine('INFO', '   💡 Logique: classe avec quota ITA=6 → offre ITA');
+    logLine('INFO', '   💡 Utilisez l\'UI OPTI pour personnaliser si nécessaire');
+  } else {
+    logLine('INFO', '✅ Capacités chargées pour ' + Object.keys(capabilities).length + ' classe(s)');
+  }
 
   // Afficher la configuration pour debug
   for (const classe in capabilities) {
