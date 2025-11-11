@@ -454,7 +454,23 @@ const OptimizationPanel = {
               <h4 class="font-bold mb-2">📋 Options/LV2 détectées :</h4>
               <div id="optionsList" class="flex flex-wrap gap-2 mb-4"></div>
             </div>
-            
+
+            <!-- ✅ V15 : Matrice de compatibilité Classe × Options -->
+            <div id="classCapabilitiesMatrix" class="mb-4 hidden">
+              <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <h4 class="font-bold mb-2 text-amber-900">
+                  <i class="fas fa-table mr-2"></i>⚙️ Quelles classes offrent quelles options ?
+                </h4>
+                <p class="text-xs text-amber-700 mb-3">
+                  Cochez les options proposées par chaque classe. Cela permet de placer correctement les élèves multi-contraintes (ex: ITA+CHAV).
+                </p>
+                <div id="capabilitiesMatrixContent" class="overflow-x-auto"></div>
+                <button onclick="OptimizationPanel.saveClassCapabilities()" class="mt-3 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-sm font-semibold">
+                  <i class="fas fa-save mr-2"></i>Enregistrer la configuration
+                </button>
+              </div>
+            </div>
+
             <!-- Configuration par classe -->
             <div id="classOptionsConfig">
               <h4 class="font-bold mb-3">🏫 Configuration par classe</h4>
@@ -1127,6 +1143,9 @@ const OptimizationPanel = {
           // Afficher les statistiques avec breakdown multi-contraintes
           this.displayOptionsStats();
 
+          // ✅ V15 : Afficher la matrice de capacités après l'analyse
+          this.showClassCapabilitiesMatrix();
+
           // Toast avec info multi-contraintes
           const multiCount = result.data.multiConstraints.filter(m => m.constraints.length > 1).length;
           if (multiCount > 0) {
@@ -1288,6 +1307,181 @@ const OptimizationPanel = {
   },
 
   /**
+   * ✅ V15 : Affiche la matrice de compatibilité Classe × Options
+   * Permet à l'utilisateur de cocher quelles classes offrent quelles options
+   */
+  showClassCapabilitiesMatrix() {
+    const matrixContainer = document.getElementById('capabilitiesMatrixContent');
+    const matrixWrapper = document.getElementById('classCapabilitiesMatrix');
+
+    if (!matrixContainer || !matrixWrapper) return;
+
+    const classes = this.getClassNamesFromState();
+    const allOptions = [...this.detectedLV2, ...this.detectedOPT];
+
+    if (classes.length === 0 || allOptions.length === 0) {
+      matrixWrapper.classList.add('hidden');
+      return;
+    }
+
+    // ✅ V15 : Charger les capacités sauvegardées ou initialiser par défaut
+    if (!this.classCapabilities) {
+      // Tenter de charger depuis le serveur
+      google.script.run
+        .withSuccessHandler((savedCapabilities) => {
+          if (savedCapabilities) {
+            console.log('✅ V15 : Capacités chargées depuis le serveur:', savedCapabilities);
+            this.classCapabilities = savedCapabilities;
+          } else {
+            // Initialiser avec toutes les capacités à true par défaut
+            console.log('ℹ️ V15 : Initialisation des capacités par défaut (toutes cochées)');
+            this.classCapabilities = {};
+            classes.forEach(cls => {
+              this.classCapabilities[cls] = {};
+              allOptions.forEach(opt => {
+                this.classCapabilities[cls][opt] = true;
+              });
+            });
+          }
+          // Construire la matrice après chargement/initialisation
+          this.renderClassCapabilitiesMatrix_(classes, allOptions, matrixContainer, matrixWrapper);
+        })
+        .withFailureHandler((error) => {
+          console.warn('⚠️ Erreur lors du chargement des capacités:', error);
+          // Fallback : initialiser par défaut
+          this.classCapabilities = {};
+          classes.forEach(cls => {
+            this.classCapabilities[cls] = {};
+            allOptions.forEach(opt => {
+              this.classCapabilities[cls][opt] = true;
+            });
+          });
+          this.renderClassCapabilitiesMatrix_(classes, allOptions, matrixContainer, matrixWrapper);
+        })
+        .loadClassCapabilities_();
+    } else {
+      // Déjà initialisé, juste afficher
+      this.renderClassCapabilitiesMatrix_(classes, allOptions, matrixContainer, matrixWrapper);
+    }
+  },
+
+  /**
+   * ✅ V15 : Construit le HTML de la matrice (fonction helper)
+   */
+  renderClassCapabilitiesMatrix_(classes, allOptions, matrixContainer, matrixWrapper) {
+
+    // Construire le HTML de la matrice
+    let html = '<table class="min-w-full border-collapse border border-gray-300 text-xs">';
+
+    // En-tête
+    html += '<thead><tr class="bg-gray-100">';
+    html += '<th class="border border-gray-300 p-2 font-bold">Classe</th>';
+    allOptions.forEach(opt => {
+      const isLV2 = this.detectedLV2.includes(opt);
+      const colorClass = isLV2 ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800';
+      html += `<th class="border border-gray-300 p-2 font-semibold ${colorClass}">${opt}</th>`;
+    });
+    html += '</tr></thead>';
+
+    // Corps
+    html += '<tbody>';
+    classes.forEach(cls => {
+      html += `<tr><td class="border border-gray-300 p-2 font-semibold">${cls}</td>`;
+      allOptions.forEach(opt => {
+        const isChecked = this.classCapabilities[cls][opt];
+        const checkboxId = `cap_${cls}_${opt}`.replace(/[°\s]/g, '_');
+        html += `<td class="border border-gray-300 p-2 text-center">
+          <input type="checkbox"
+                 id="${checkboxId}"
+                 data-class="${cls}"
+                 data-option="${opt}"
+                 ${isChecked ? 'checked' : ''}
+                 onchange="OptimizationPanel.onCapabilityChange(this)"
+                 class="w-4 h-4 cursor-pointer">
+        </td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+
+    html += '<div class="mt-2 text-xs text-amber-700">';
+    html += '<i class="fas fa-info-circle mr-1"></i>';
+    html += '<strong>Conseil :</strong> Cochez UNIQUEMENT les options réellement proposées par chaque classe. ';
+    html += 'Par exemple, si 6°1 a un prof de CHAV mais pas de prof d\'ITA, ne cochez que CHAV pour 6°1.';
+    html += '</div>';
+
+    matrixContainer.innerHTML = html;
+    matrixWrapper.classList.remove('hidden');
+
+    console.log('📊 Matrice de capacités affichée:', this.classCapabilities);
+  },
+
+  /**
+   * ✅ V15 : Callback quand une case de la matrice est cochée/décochée
+   */
+  onCapabilityChange(checkbox) {
+    const cls = checkbox.dataset.class;
+    const opt = checkbox.dataset.option;
+    this.classCapabilities[cls][opt] = checkbox.checked;
+    console.log(`✏️ ${cls} - ${opt}: ${checkbox.checked}`);
+  },
+
+  /**
+   * ✅ V15 : Sauvegarde la configuration de capacités
+   */
+  saveClassCapabilities() {
+    if (!this.classCapabilities) {
+      if (typeof toast === 'function') {
+        toast('⚠️ Aucune configuration à sauvegarder', 'warning');
+      }
+      return;
+    }
+
+    // Vérifier qu'au moins une classe a au moins une option cochée
+    let hasAnyCapability = false;
+    for (const cls in this.classCapabilities) {
+      for (const opt in this.classCapabilities[cls]) {
+        if (this.classCapabilities[cls][opt]) {
+          hasAnyCapability = true;
+          break;
+        }
+      }
+      if (hasAnyCapability) break;
+    }
+
+    if (!hasAnyCapability) {
+      if (typeof toast === 'function') {
+        toast('⚠️ Attention : Aucune capacité cochée !', 'warning');
+      }
+    }
+
+    console.log('💾 Sauvegarde de la configuration des capacités:', this.classCapabilities);
+
+    // ✅ V15 : Appel serveur pour sauvegarder
+    google.script.run
+      .withSuccessHandler((result) => {
+        if (result.success) {
+          if (typeof toast === 'function') {
+            toast('✅ Configuration des capacités sauvegardée !', 'success');
+          }
+          console.log('✅ Sauvegarde réussie côté serveur');
+        } else {
+          if (typeof toast === 'function') {
+            toast('❌ Erreur lors de la sauvegarde: ' + result.error, 'error');
+          }
+          console.error('❌ Erreur serveur:', result.error);
+        }
+      })
+      .withFailureHandler((error) => {
+        if (typeof toast === 'function') {
+          toast('❌ Erreur de communication avec le serveur', 'error');
+        }
+        console.error('❌ Erreur:', error);
+      })
+      .saveClassCapabilities_(this.classCapabilities);
+  },
+
+  /**
    * ✅ NOUVEAU : Calculer la répartition cible des effectifs par classe
    * Exemple: 121 élèves sur 5 classes → [25, 25, 24, 24, 23]
    */
@@ -1413,16 +1607,33 @@ const OptimizationPanel = {
       this.classOptionsConfig[cls] = {};
     });
 
-    // Distribuer chaque option équitablement
+    // ✅ V15 : Distribuer chaque option équitablement EN RESPECTANT les capacités
     Object.keys(optionCounts).forEach((option) => {
       const total = optionCounts[option];
-      const avg = Math.floor(total / nbClasses);
-      const remainder = total - (avg * nbClasses);
+
+      // ✅ V15 : Filtrer les classes qui proposent cette option
+      let eligibleClasses = classes;
+      if (this.classCapabilities) {
+        eligibleClasses = classes.filter(cls => {
+          return this.classCapabilities[cls] && this.classCapabilities[cls][option] === true;
+        });
+
+        if (eligibleClasses.length === 0) {
+          console.warn(`⚠️ ${option}: Aucune classe ne propose cette option ! Distribution sur toutes les classes par défaut.`);
+          eligibleClasses = classes; // Fallback si aucune classe cochée
+        } else {
+          console.log(`  🎯 ${option}: Distribution sur ${eligibleClasses.length} classe(s) compatible(s)`);
+        }
+      }
+
+      const nbEligible = eligibleClasses.length;
+      const avg = Math.floor(total / nbEligible);
+      const remainder = total - (avg * nbEligible);
 
       let assigned = 0;
 
-      for (let i = 0; i < nbClasses; i++) {
-        const className = classes[i];
+      for (let i = 0; i < nbEligible; i++) {
+        const className = eligibleClasses[i];
         const quota = i < remainder ? avg + 1 : avg;
 
         if (quota > 0) {
