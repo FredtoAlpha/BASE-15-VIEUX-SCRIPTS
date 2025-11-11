@@ -102,6 +102,7 @@ function makeCtxFromSourceSheets_() {
     modeSrc: '',  // ✅ FIX: Mode vide pour LEGACY car les sources n'ont pas de suffixe
     writeTarget: 'TEST',
     niveaux: niveauxDest,  // ✅ FIX: Les niveaux de destination (5°1, 5°2, etc.)
+    levels: niveauxDest,  // ✅ ALIAS pour compatibilité Phase4_BASEOPTI_V2
     srcSheets: sourceSheets,  // Les onglets sources réels (6°1, 6°2, etc.)
     cacheSheets: testSheets,  // Les onglets TEST à créer (5°1TEST, 5°2TEST, etc.)
     sourceToDestMapping,  // ✅ Ajout du mapping pour utilisation dans les phases
@@ -1366,8 +1367,9 @@ function moveEleveToClass_(classesState, eleve, fromClasse, toClasse) {
 function Phase3I_completeAndParity_(ctx) {
   const warnings = [];
 
-  // Lire l'état depuis la source
-  const classesState = readElevesFromSelectedMode_(ctx);
+  // ✅ FIX CRITIQUE : Lire depuis CACHE (résultats P1/P2), PAS depuis sources !
+  // Phase3 doit continuer le travail de Phase1 et Phase2, pas repartir de zéro
+  const classesState = readElevesFromCache_(ctx);
 
   // Verrouiller Options/LV2/DISSO/ASSO
   lockAttributes_(classesState, {
