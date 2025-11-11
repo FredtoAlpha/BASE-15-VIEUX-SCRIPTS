@@ -554,10 +554,10 @@ function phase1Stream() {
   try {
     const ctx = optStream_init_V2();
 
-    // ✅ ARCH V3 : Utiliser la version qui lit depuis _BASEOPTI
-    const p1 = (typeof Phase1I_dispatchOptionsLV2_BASEOPTI_V3 === 'function')
-      ? Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx)
-      : Phase1I_dispatchOptionsLV2_BASEOPTI(ctx);
+    // ✅ ARCH V4 : utiliser la version multi-contraintes quand disponible
+    const p1 = (typeof Phase1_MultiConstraints_V4 === 'function')
+      ? Phase1_MultiConstraints_V4(ctx)
+      : Phase1I_dispatchOptionsLV2_BASEOPTI_V3(ctx);
 
   // ✅ AUDIT : Vérifier les invariants après P1
   try {

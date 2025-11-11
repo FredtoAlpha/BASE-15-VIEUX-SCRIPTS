@@ -25,11 +25,14 @@ function setStructureOptionsFromUI_MultiConstraints(optionsByClass) {
     console.log('Configuration reçue:', JSON.stringify(optionsByClass, null, 2));
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const structureSheet = ss.getSheetByName('_STRUCTURE');
+    const structureSheetName = (typeof ELEVES_MODULE_CONFIG !== 'undefined' && ELEVES_MODULE_CONFIG && ELEVES_MODULE_CONFIG.STRUCTURE_SHEET)
+      ? ELEVES_MODULE_CONFIG.STRUCTURE_SHEET
+      : '_STRUCTURE';
+    const structureSheet = ss.getSheetByName(structureSheetName);
 
     if (!structureSheet) {
-      console.error('⚠️ Feuille _STRUCTURE introuvable');
-      return { success: false, error: 'Feuille _STRUCTURE introuvable' };
+      console.error(`⚠️ Feuille ${structureSheetName} introuvable`);
+      return { success: false, error: `Feuille ${structureSheetName} introuvable` };
     }
 
     // ===================================================================
