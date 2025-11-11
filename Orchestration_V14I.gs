@@ -1757,7 +1757,7 @@ function Phase4_balanceScoresSwaps_(ctx) {
   };
 
   // Lancer le moteur de swaps avec le mini-gardien
-  const res = runSwapEngineV14_withLocks_(
+  const res = runSwapEngineV14_withLocks_LEGACY_(
     classesState,
     {
       metrics: ['COM', 'TRA', 'PART', 'ABS'],
@@ -1789,7 +1789,7 @@ function Phase4_balanceScoresSwaps_(ctx) {
 /**
  * Moteur de swaps avec verrous + timeboxing + anti-stagnation
  */
-function runSwapEngineV14_withLocks_(classesState, options, locks, warnings, ctx, offers) {
+function runSwapEngineV14_withLocks_LEGACY_(classesState, options, locks, warnings, ctx, offers) {
   const metrics = options.metrics || ['COM', 'TRA', 'PART', 'ABS'];
   const primary = options.primary || 'COM';
   const maxSwaps = options.maxSwaps || 1000;
@@ -1812,7 +1812,7 @@ function runSwapEngineV14_withLocks_(classesState, options, locks, warnings, ctx
   const offer = buildOfferWithQuotas_(ctx);
   
   // 📊 Stats mobilité initiale
-  const mobilityStats = computeMobilityStats_(classesState, offer);
+  const mobilityStats = computeMobilityStats_LEGACY_(classesState, offer);
   logLine('INFO', '  📊 Mobilité: LIBRE=' + mobilityStats.libre + ', FIXE=' + mobilityStats.fixe + ', TOTAL=' + mobilityStats.total);
 
   // Timeboxing : boucle tant que temps restant ET swaps < max
@@ -1823,10 +1823,10 @@ function runSwapEngineV14_withLocks_(classesState, options, locks, warnings, ctx
     const counts = computeCountsFromState_(classesState);
 
     // Calculer les scores actuels de toutes les classes
-    const currentScores = calculateClassScores_(classesState, metrics);
+    const currentScores = calculateClassScores_LEGACY_(classesState, metrics);
 
     // Trouver le meilleur swap possible (avec poids et tolérance)
-    const bestSwap = findBestSwap_(classesState, currentScores, primary, locks, offer, counts, weights, parityTol);
+    const bestSwap = findBestSwap_LEGACY_(classesState, currentScores, primary, locks, offer, counts, weights, parityTol);
 
     if (!bestSwap) {
       // Plus de swap bénéfique
@@ -1872,7 +1872,7 @@ function runSwapEngineV14_withLocks_(classesState, options, locks, warnings, ctx
   // 🛡️ GARDE-FOU FINAL PARITÉ : si une classe reste hors tolérance
   // ✅ CORRECTIF: Recalculer counts après la boucle (hors scope)
   const countsAfterSwaps = computeCountsFromState_(classesState);
-  applyParityGuardrail_(classesState, parityTol, offer, countsAfterSwaps);
+  applyParityGuardrail_LEGACY_(classesState, parityTol, offer, countsAfterSwaps);
 
   return {
     applied: applied,
@@ -1885,14 +1885,14 @@ function runSwapEngineV14_withLocks_(classesState, options, locks, warnings, ctx
 /**
  * Calcule les scores de toutes les classes pour toutes les métriques
  */
-function calculateClassScores_(classesState, metrics) {
+function calculateClassScores_LEGACY_(classesState, metrics) {
   const scores = {};
 
   for (const [niveau, eleves] of Object.entries(classesState)) {
     scores[niveau] = {};
 
     for (const metric of metrics) {
-      scores[niveau][metric] = calculateClassMetric_(eleves, metric);
+      scores[niveau][metric] = calculateClassMetric_LEGACY_(eleves, metric);
     }
   }
 
@@ -1902,7 +1902,7 @@ function calculateClassScores_(classesState, metrics) {
 /**
  * Calcule une métrique pour une classe
  */
-function calculateClassMetric_(eleves, metric) {
+function calculateClassMetric_LEGACY_(eleves, metric) {
   let sum = 0;
 
   for (const eleve of eleves) {
@@ -1918,7 +1918,7 @@ function calculateClassMetric_(eleves, metric) {
  * Priorité 1 : Parité (si hors tolérance)
  * Priorité 2 : Scores pondérés (COM/TRA/PART/ABS) selon poids UI
  */
-function findBestSwap_(classesState, currentScores, primary, locks, offer, counts, weights, parityTol) {
+function findBestSwap_LEGACY_(classesState, currentScores, primary, locks, offer, counts, weights, parityTol) {
   let bestSwap = null;
   let bestScore = -Infinity;
 
@@ -1946,23 +1946,23 @@ function findBestSwap_(classesState, currentScores, primary, locks, offer, count
       // Essayer tous les swaps entre ces deux classes
       for (const eleve1 of eleves1) {
         // ✅ Vérifier mobilité élève1 (LIBRE ou PERMUT uniquement)
-        if (!isEleveMobile_(eleve1, counts, niveau1, offer)) {
+        if (!isEleveMobile_LEGACY_(eleve1, counts, niveau1, offer)) {
           continue;
         }
-        
+
         for (const eleve2 of eleves2) {
           // ✅ Vérifier mobilité élève2
-          if (!isEleveMobile_(eleve2, counts, niveau2, offer)) {
+          if (!isEleveMobile_LEGACY_(eleve2, counts, niveau2, offer)) {
             continue;
           }
           
           // ✅ Vérifier si le swap est valide selon les verrous + quotas
-          if (!isSwapValid_(eleve1, niveau1, eleve2, niveau2, locks, classesState, offer, counts)) {
+          if (!isSwapValid_LEGACY_(eleve1, niveau1, eleve2, niveau2, locks, classesState, offer, counts)) {
             continue;
           }
 
           // Calculer le score d'amélioration (hiérarchisé + pondéré)
-          const swapScore = calculateSwapScore_(
+          const swapScore = calculateSwapScore_LEGACY_(
             eleve1,
             niveau1,
             eleve2,
@@ -2096,7 +2096,7 @@ function isMoveAllowed_(eleve, clsTo, offer, counts, quotas) {
  * @deprecated Utiliser isMoveAllowed_ à la place
  * Conservé pour compatibilité avec le code existant
  */
-function eligibleForSwap_(eleve, clsCible, offer) {
+function eligibleForSwap_LEGACY_(eleve, clsCible, offer) {
   // Appeler la nouvelle fonction avec counts vides (pas de vérification quotas)
   return isMoveAllowed_(eleve, clsCible, offer, {}, {});
 }
@@ -2104,7 +2104,7 @@ function eligibleForSwap_(eleve, clsCible, offer) {
 /**
  * Vérifie si un swap est valide selon les verrous
  */
-function isSwapValid_(eleve1, classe1, eleve2, classe2, locks, classesState, offer, counts) {
+function isSwapValid_LEGACY_(eleve1, classe1, eleve2, classe2, locks, classesState, offer, counts) {
   // ✅ Utiliser isMoveAllowed_ avec vérification des quotas
   if (!isMoveAllowed_(eleve1, classe2, offer, counts || {}, {})) {
     return false;
@@ -2144,14 +2144,14 @@ function isSwapValid_(eleve1, classe1, eleve2, classe2, locks, classesState, off
 /**
  * Calcule les statistiques de mobilité (LIBRE vs FIXE)
  */
-function computeMobilityStats_(classesState, offer) {
+function computeMobilityStats_LEGACY_(classesState, offer) {
   let libre = 0;
   let fixe = 0;
   
   for (const [classe, eleves] of Object.entries(classesState)) {
     const counts = computeCountsFromState_(classesState);
     eleves.forEach(function(e) {
-      if (isEleveMobile_(e, counts, classe, offer)) {
+      if (isEleveMobile_LEGACY_(e, counts, classe, offer)) {
         libre++;
       } else {
         fixe++;
@@ -2170,14 +2170,14 @@ function computeMobilityStats_(classesState, offer) {
  * Garde-fou final parité : si une classe reste hors tolérance,
  * force un swap greedy avec la classe la plus opposée en parité
  */
-function applyParityGuardrail_(classesState, parityTol, offer, counts) {
+function applyParityGuardrail_LEGACY_(classesState, parityTol, offer, counts) {
   const niveaux = Object.keys(classesState);
   let swapped = false;
   
   // Identifier les classes hors tolérance
   const outOfTol = [];
   niveaux.forEach(function(niveau) {
-    const state = computeClassState_(classesState[niveau]);
+    const state = computeClassState_LEGACY_(classesState[niveau]);
     if (Math.abs(state.deltaFM) > parityTol) {
       outOfTol.push({
         niveau: niveau,
@@ -2202,7 +2202,7 @@ function applyParityGuardrail_(classesState, parityTol, offer, counts) {
     
     niveaux.forEach(function(niveau2) {
       if (niveau2 === cls1.niveau) return;
-      const state2 = computeClassState_(classesState[niveau2]);
+      const state2 = computeClassState_LEGACY_(classesState[niveau2]);
       // Opposé = l'une a trop de F, l'autre trop de M
       if ((cls1.deltaFM > 0 && state2.deltaFM < 0) || (cls1.deltaFM < 0 && state2.deltaFM > 0)) {
         const delta = Math.abs(cls1.deltaFM) + Math.abs(state2.deltaFM);
@@ -2232,8 +2232,8 @@ function applyParityGuardrail_(classesState, parityTol, offer, counts) {
         if (genre2 === cls1.needsGenre) continue;  // Doit être opposé
         
         // Vérifier mobilité
-        if (!isEleveMobile_(e1, counts, cls1.niveau, offer)) continue;
-        if (!isEleveMobile_(e2, counts, bestTarget, offer)) continue;
+        if (!isEleveMobile_LEGACY_(e1, counts, cls1.niveau, offer)) continue;
+        if (!isEleveMobile_LEGACY_(e2, counts, bestTarget, offer)) continue;
         
         // Appliquer le swap
         swapEleves_(classesState, e1, cls1.niveau, e2, bestTarget);
@@ -2247,7 +2247,7 @@ function applyParityGuardrail_(classesState, parityTol, offer, counts) {
 /**
  * Vérifie si un élève est mobile (LIBRE ou PERMUT, hors quotas)
  */
-function isEleveMobile_(eleve, counts, currentClass, offer) {
+function isEleveMobile_LEGACY_(eleve, counts, currentClass, offer) {
   // 1) Élève FIXE => jamais mobile
   const fixe = String(eleve.FIXE || eleve.fixe || '').trim().toUpperCase();
   if (fixe === '1' || fixe === 'OUI' || fixe === 'X' || fixe === 'FIXE') {
@@ -2281,14 +2281,14 @@ function isEleveMobile_(eleve, counts, currentClass, offer) {
  * Priorité 1 : Parité (si hors tolérance)
  * Priorité 2 : Scores pondérés (COM/TRA/PART/ABS)
  */
-function calculateSwapScore_(eleve1, classe1, eleve2, classe2, classesState, weights, parityTol) {
+function calculateSwapScore_LEGACY_(eleve1, classe1, eleve2, classe2, classesState, weights, parityTol) {
   // Calculer l'état actuel des classes
-  const state1 = computeClassState_(classesState[classe1]);
-  const state2 = computeClassState_(classesState[classe2]);
+  const state1 = computeClassState_LEGACY_(classesState[classe1]);
+  const state2 = computeClassState_LEGACY_(classesState[classe2]);
   
   // Simuler le swap
-  const state1After = simulateSwapState_(state1, eleve1, eleve2);
-  const state2After = simulateSwapState_(state2, eleve2, eleve1);
+  const state1After = simulateSwapState_LEGACY_(state1, eleve1, eleve2);
+  const state2After = simulateSwapState_LEGACY_(state2, eleve2, eleve1);
   
   // === NIVEAU 1 : PARITÉ (prioritaire si hors tolérance) ===
   const parityBefore = Math.abs(state1.deltaFM) + Math.abs(state2.deltaFM);
@@ -2309,7 +2309,7 @@ function calculateSwapScore_(eleve1, classe1, eleve2, classe2, classesState, wei
   // Calcul de la dispersion globale : somme des écarts à la moyenne
   const allClasses = Object.keys(classesState);
   const totalBadCOMBefore = allClasses.reduce(function(sum, cls) {
-    return sum + computeClassState_(classesState[cls]).badCOM;
+    return sum + computeClassState_LEGACY_(classesState[cls]).badCOM;
   }, 0);
   const meanBadCOM = totalBadCOMBefore / allClasses.length;
   
@@ -2340,7 +2340,7 @@ function calculateSwapScore_(eleve1, classe1, eleve2, classe2, classesState, wei
 /**
  * Calcule l'état d'une classe (compteurs pour les scores)
  */
-function computeClassState_(eleves) {
+function computeClassState_LEGACY_(eleves) {
   let countF = 0, countM = 0;
   let badCOM = 0, sumCOM = 0;
   let sumTRA = 0, sumPART = 0, sumABS = 0;
@@ -2380,7 +2380,7 @@ function computeClassState_(eleves) {
 /**
  * Simule l'état d'une classe après un swap (enlève out, ajoute in)
  */
-function simulateSwapState_(state, out, in_) {
+function simulateSwapState_LEGACY_(state, out, in_) {
   const newState = JSON.parse(JSON.stringify(state)); // Clone
   
   // Retirer out
