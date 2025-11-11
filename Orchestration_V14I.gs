@@ -1023,20 +1023,20 @@ function writeToCache_(ctx, baseClass, values) {
 function Phase1I_dispatchOptionsLV2_(ctx) {
   const warnings = [];
 
-  // ✅ CORRECTIF CRITIQUE : Lire TOUS les élèves dans un pool global
-  // Pas de mapping 1:1, on va dispatcher selon quotas LV2/OPT
-  const poolGlobal = [];
-  for (const srcSheet of ctx.srcSheets) {
-    const sheet = ctx.ss.getSheetByName(srcSheet);
-    if (!sheet) {
-      logLine('WARN', 'Feuille source ' + srcSheet + ' introuvable');
-      continue;
-    }
-    const eleves = readElevesFromSheet_(sheet);
-    poolGlobal.push(...eleves);
+  // ✅ OPTIMISATION : Lire depuis l'onglet CONSOLIDATION (regroupe tous les élèves)
+  // Plus simple et plus rapide qu'une lecture multi-sources
+  const consolidationSheet = ctx.ss.getSheetByName('CONSOLIDATION');
+  if (!consolidationSheet) {
+    logLine('ERROR', 'Onglet CONSOLIDATION introuvable ! Impossible de continuer.');
+    return {
+      ok: false,
+      warnings: ['CONSOLIDATION introuvable'],
+      counts: {}
+    };
   }
 
-  logLine('INFO', 'Phase 1 : Pool global de ' + poolGlobal.length + ' élèves');
+  const poolGlobal = readElevesFromSheet_(consolidationSheet);
+  logLine('INFO', 'Phase 1 : Pool global de ' + poolGlobal.length + ' élèves (depuis CONSOLIDATION)');
 
   // Créer les classes destination VIDES
   const classesState = {};
