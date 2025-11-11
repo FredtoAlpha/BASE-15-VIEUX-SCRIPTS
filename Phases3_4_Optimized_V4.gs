@@ -383,12 +383,29 @@ function Phase4_MaxHeterogeneity_V4(ctx) {
   
   logLine('INFO', '📊 Analyse initiale de l\'hétérogénéité :');
   logLine('INFO', `  - Score global : ${initialAnalysis.globalScore.toFixed(2)}`);
-  logLine('INFO', '  - Moyennes par classe :');
-  
+
+  if (initialAnalysis.scoreFormula) {
+    logLine('INFO', `  - Formule score : ${initialAnalysis.scoreFormula}`);
+  }
+
+  const weightSummary = Object
+    .entries(getHeterogeneityWeights())
+    .map(([metric, weight]) => `${metric}=intra:${weight.intra}/inter:${weight.inter}`)
+    .join(', ');
+  logLine('INFO', `  - Poids (intra/inter) : ${weightSummary}`);
+
+  logScoreBreakdown('  - Décomposition score initial', initialAnalysis.scoreBreakdown);
+
+  logLine('INFO', '  - Moyennes et écarts-types par classe :');
+
   Object.entries(initialAnalysis.classStats).forEach(([classe, stats]) => {
-    logLine('INFO', `    ${classe} : COM=${stats.avgCOM.toFixed(2)}, ` +
-                   `TRA=${stats.avgTRA.toFixed(2)}, ` +
-                   `écart-type COM=${stats.stdCOM.toFixed(2)}`);
+    logLine(
+      'INFO',
+      `    ${classe} : Moy[COM/TRA/PART/ABS]=${stats.avgCOM.toFixed(2)}/` +
+      `${stats.avgTRA.toFixed(2)}/${stats.avgPART.toFixed(2)}/${stats.avgABS.toFixed(2)}, ` +
+      `σ=${stats.stdCOM.toFixed(2)}/${stats.stdTRA.toFixed(2)}/` +
+      `${stats.stdPART.toFixed(2)}/${stats.stdABS.toFixed(2)}`
+    );
   });
 
   // ===================================================================
@@ -477,15 +494,23 @@ function Phase4_MaxHeterogeneity_V4(ctx) {
   // ===================================================================
   
   const finalAnalysis = analyzeClassHeterogeneity(data, indices, ctx);
-  const improvement = ((finalAnalysis.globalScore - initialAnalysis.globalScore) / 
-                       initialAnalysis.globalScore * 100).toFixed(1);
+  const improvement = initialAnalysis.globalScore === 0
+    ? 0
+    : ((finalAnalysis.globalScore - initialAnalysis.globalScore) /
+       initialAnalysis.globalScore * 100);
 
   logLine('INFO', '\n📊 Résultat final :');
   logLine('INFO', `  - Score initial : ${initialAnalysis.globalScore.toFixed(2)}`);
   logLine('INFO', `  - Score final : ${finalAnalysis.globalScore.toFixed(2)}`);
-  logLine('INFO', `  - Amélioration : ${improvement}%`);
+  logLine('INFO', `  - Amélioration : ${improvement.toFixed(1)}%`);
   logLine('INFO', `  - Swaps appliqués : ${swapsApplied}`);
   logLine('INFO', `  - Itérations : ${iterations}`);
+
+  if (finalAnalysis.scoreFormula) {
+    logLine('INFO', `  - Formule utilisée : ${finalAnalysis.scoreFormula}`);
+  }
+
+  logScoreBreakdown('  - Décomposition score final', finalAnalysis.scoreBreakdown);
 
   // Écrire les modifications si des swaps ont été effectués
   if (swapsApplied > 0) {
@@ -509,23 +534,28 @@ function Phase4_MaxHeterogeneity_V4(ctx) {
 function analyzeClassHeterogeneity(data, indices, ctx) {
   const analysis = {
     classStats: {},
-    globalScore: 0
+    globalScore: 0,
+    scoreBreakdown: [],
+    scoreFormula: ''
   };
 
   // Calculer les stats par classe
   const classes = ctx.levels || ['5°1', '5°2', '5°3', '5°4', '5°5', '5°6'];
-  
+
+  const hasPart = indices.part !== undefined && indices.part >= 0;
+  const hasAbs = indices.abs !== undefined && indices.abs >= 0;
+
   classes.forEach(classe => {
     const students = [];
-    
+
     for (let i = 1; i < data.length; i++) {
       if (data[i][indices.assigned] === classe && data[i][indices.placed]) {
         students.push({
           index: i,
           com: parseFloat(data[i][indices.com]) || 0,
           tra: parseFloat(data[i][indices.tra]) || 0,
-          part: parseFloat(data[i][indices.part]) || 0,
-          abs: parseFloat(data[i][indices.abs]) || 0
+          part: hasPart ? (parseFloat(data[i][indices.part]) || 0) : 0,
+          abs: hasAbs ? (parseFloat(data[i][indices.abs]) || 0) : 0
         });
       }
     }
@@ -544,13 +574,26 @@ function analyzeClassHeterogeneity(data, indices, ctx) {
         stdABS: standardDeviation(students.map(s => s.abs))
       };
 
+      ['stdPART', 'stdABS'].forEach(key => {
+        if (!Number.isFinite(stats[key])) {
+          stats[key] = 0;
+        }
+      });
+
       analysis.classStats[classe] = stats;
     }
   });
 
   // Calculer le score global d'hétérogénéité
   // Plus le score est élevé, plus les classes sont hétérogènes
-  analysis.globalScore = calculateHeterogeneityScore(analysis.classStats);
+  const scoreResult = calculateHeterogeneityScore(analysis.classStats, { returnBreakdown: true });
+  if (typeof scoreResult === 'object') {
+    analysis.globalScore = scoreResult.score;
+    analysis.scoreBreakdown = scoreResult.breakdown;
+    analysis.scoreFormula = scoreResult.formula;
+  } else {
+    analysis.globalScore = scoreResult;
+  }
 
   return analysis;
 }
@@ -559,28 +602,83 @@ function analyzeClassHeterogeneity(data, indices, ctx) {
  * Calcule un score global d'hétérogénéité
  * Objectif : minimiser les écarts entre classes ET maximiser la diversité intra-classe
  */
-function calculateHeterogeneityScore(classStats) {
-  let score = 0;
-  const classes = Object.keys(classStats);
-  
-  if (classes.length === 0) return 0;
+function getHeterogeneityWeights() {
+  if (globalThis.__HETEROGENEITY_WEIGHTS__) {
+    return globalThis.__HETEROGENEITY_WEIGHTS__;
+  }
 
-  // 1. Pénaliser les écarts entre moyennes de classes (on veut des moyennes proches)
-  const avgCOMs = classes.map(c => classStats[c].avgCOM);
-  const avgTRAs = classes.map(c => classStats[c].avgTRA);
-  
-  const interClassVarianceCOM = variance(avgCOMs);
-  const interClassVarianceTRA = variance(avgTRAs);
-  
-  // 2. Récompenser la diversité intra-classe (écart-type élevé = bonne mixité)
-  const avgIntraClassStdCOM = average(classes.map(c => classStats[c].stdCOM));
-  const avgIntraClassStdTRA = average(classes.map(c => classStats[c].stdTRA));
-  
-  // Score composite (COM prioritaire avec poids x2)
-  // On veut : faible variance inter-classe ET fort écart-type intra-classe
-  score = (avgIntraClassStdCOM * 2 + avgIntraClassStdTRA) / 
-          (1 + interClassVarianceCOM * 2 + interClassVarianceTRA);
-  
+  const weights = {
+    COM: { intra: 2.0, inter: 2.0 },
+    TRA: { intra: 1.5, inter: 1.2 },
+    PART: { intra: 1.2, inter: 1.0 },
+    ABS: { intra: 0.8, inter: 0.8 }
+  };
+
+  globalThis.__HETEROGENEITY_WEIGHTS__ = weights;
+  return weights;
+}
+
+function calculateHeterogeneityScore(classStats, options) {
+  const opts = options || {};
+  const classes = Object.keys(classStats);
+
+  if (classes.length === 0) {
+    return opts.returnBreakdown ? {
+      score: 0,
+      breakdown: [],
+      formula: 'Σ(intraStd × poids_intra) / (1 + Σ(variance_moy × poids_inter))',
+      numerator: 0,
+      denominator: 1
+    } : 0;
+  }
+
+  const weights = getHeterogeneityWeights();
+  const metrics = [
+    { key: 'COM', avgKey: 'avgCOM', stdKey: 'stdCOM' },
+    { key: 'TRA', avgKey: 'avgTRA', stdKey: 'stdTRA' },
+    { key: 'PART', avgKey: 'avgPART', stdKey: 'stdPART' },
+    { key: 'ABS', avgKey: 'avgABS', stdKey: 'stdABS' }
+  ];
+
+  let numerator = 0;
+  let denominator = 1; // Base pour éviter division par zéro
+  const breakdown = [];
+
+  metrics.forEach(metric => {
+    const metricWeights = weights[metric.key] || { intra: 1, inter: 1 };
+    const averages = classes.map(c => classStats[c][metric.avgKey] || 0);
+    const stds = classes.map(c => classStats[c][metric.stdKey] || 0);
+
+    const interVariance = variance(averages);
+    const intraStd = average(stds);
+    const intraContribution = intraStd * metricWeights.intra;
+    const interContribution = interVariance * metricWeights.inter;
+
+    numerator += intraContribution;
+    denominator += interContribution;
+
+    breakdown.push({
+      metric: metric.key,
+      intraStd: intraStd,
+      interVariance: interVariance,
+      weights: metricWeights,
+      intraContribution: intraContribution,
+      interContribution: interContribution
+    });
+  });
+
+  const score = denominator === 0 ? 0 : numerator / denominator;
+
+  if (opts.returnBreakdown) {
+    return {
+      score: score,
+      breakdown: breakdown,
+      formula: 'Σ(intraStd × poids_intra) / (1 + Σ(variance_moy × poids_inter))',
+      numerator: numerator,
+      denominator: denominator
+    };
+  }
+
   return score;
 }
 
@@ -589,7 +687,10 @@ function calculateHeterogeneityScore(classStats) {
  */
 function identifySwappableStudents(data, indices) {
   const swappable = [];
-  
+  const weights = getHeterogeneityWeights();
+  const hasPart = indices.part !== undefined && indices.part >= 0;
+  const hasAbs = indices.abs !== undefined && indices.abs >= 0;
+
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     
@@ -608,12 +709,12 @@ function identifySwappableStudents(data, indices) {
         nom: row[indices.nom] + ' ' + row[indices.prenom],
         com: parseFloat(row[indices.com]) || 0,
         tra: parseFloat(row[indices.tra]) || 0,
-        part: parseFloat(row[indices.part]) || 0,
-        abs: parseFloat(row[indices.abs]) || 0,
-        compositeScore: (parseFloat(row[indices.com]) || 0) * 2 + 
-                       (parseFloat(row[indices.tra]) || 0) + 
-                       (parseFloat(row[indices.part]) || 0) + 
-                       (parseFloat(row[indices.abs]) || 0)
+        part: hasPart ? (parseFloat(row[indices.part]) || 0) : 0,
+        abs: hasAbs ? (parseFloat(row[indices.abs]) || 0) : 0,
+        compositeScore: (parseFloat(row[indices.com]) || 0) * weights.COM.intra +
+                       (parseFloat(row[indices.tra]) || 0) * weights.TRA.intra +
+                       (hasPart ? (parseFloat(row[indices.part]) || 0) : 0) * weights.PART.intra +
+                       (hasAbs ? (parseFloat(row[indices.abs]) || 0) : 0) * weights.ABS.intra
       });
     }
   }
@@ -734,10 +835,14 @@ function simulateSwap(swap, data, indices, currentAnalysis) {
     // Retirer student1 de class1 et ajouter student2
     stats1.avgCOM = (stats1.avgCOM * stats1.count - swap.student1.com + swap.student2.com) / stats1.count;
     stats1.avgTRA = (stats1.avgTRA * stats1.count - swap.student1.tra + swap.student2.tra) / stats1.count;
-    
+    stats1.avgPART = (stats1.avgPART * stats1.count - swap.student1.part + swap.student2.part) / stats1.count;
+    stats1.avgABS = (stats1.avgABS * stats1.count - swap.student1.abs + swap.student2.abs) / stats1.count;
+
     // Retirer student2 de class2 et ajouter student1
     stats2.avgCOM = (stats2.avgCOM * stats2.count - swap.student2.com + swap.student1.com) / stats2.count;
     stats2.avgTRA = (stats2.avgTRA * stats2.count - swap.student2.tra + swap.student1.tra) / stats2.count;
+    stats2.avgPART = (stats2.avgPART * stats2.count - swap.student2.part + swap.student1.part) / stats2.count;
+    stats2.avgABS = (stats2.avgABS * stats2.count - swap.student2.abs + swap.student1.abs) / stats2.count;
   }
   
   // Calculer le nouveau score
@@ -755,14 +860,30 @@ function simulateSwap(swap, data, indices, currentAnalysis) {
 function applySwap(swap, data, indices) {
   const class1 = data[swap.student1.index][indices.assigned];
   const class2 = data[swap.student2.index][indices.assigned];
-  
+
   // Échanger les classes
   data[swap.student1.index][indices.assigned] = class2;
   data[swap.student2.index][indices.assigned] = class1;
-  
+
   // Mettre à jour les objets swap pour les prochaines itérations
   swap.student1.classe = class2;
   swap.student2.classe = class1;
+}
+
+function logScoreBreakdown(prefix, breakdown) {
+  if (!breakdown || breakdown.length === 0) {
+    return;
+  }
+
+  logLine('INFO', `${prefix} :`);
+  breakdown.forEach(component => {
+    logLine(
+      'INFO',
+      `    ${component.metric} → intra ${component.intraStd.toFixed(2)}×${component.weights.intra}` +
+      `=${component.intraContribution.toFixed(2)}, interVar ${component.interVariance.toFixed(2)}×${component.weights.inter}` +
+      `=${component.interContribution.toFixed(2)}`
+    );
+  });
 }
 
 // ===================================================================
@@ -795,3 +916,4 @@ globalThis.Phase4_balanceScoresSwaps_BASEOPTI_V3 = Phase4_MaxHeterogeneity_V4;
 // Exporter pour tests
 globalThis.analyzeClassHeterogeneity = analyzeClassHeterogeneity;
 globalThis.calculateHeterogeneityScore = calculateHeterogeneityScore;
+globalThis.getHeterogeneityWeights = getHeterogeneityWeights;
