@@ -101,17 +101,40 @@ function initEmptyCacheTabs_(ctx) {
  */
 function writeCacheHeaders_(ctx, targetSheet, cacheName) {
   // Trouver l'onglet source pour copier les en-têtes
-  const srcName = cacheName.replace('CACHE', ctx.modeSrc);
+  let srcName;
+
+  // ✅ FIX: Mode LEGACY avec mapping
+  if (ctx.sourceToDestMapping && ctx.writeTarget === 'TEST') {
+    // En mode LEGACY, cacheName est comme "5°1TEST"
+    // On doit trouver l'onglet source correspondant (6°1)
+    const destName = cacheName.replace(ctx.writeTarget, ''); // "5°1"
+
+    // Chercher la source qui mappe vers cette destination
+    for (const [source, dest] of Object.entries(ctx.sourceToDestMapping)) {
+      if (dest === destName) {
+        srcName = source;
+        break;
+      }
+    }
+  } else {
+    // Mode normal
+    srcName = cacheName.replace('CACHE', ctx.modeSrc || '');
+  }
+
   const srcSheet = ctx.ss.getSheetByName(srcName);
-  
+
   if (srcSheet && srcSheet.getLastRow() > 0) {
     const headers = srcSheet.getRange(1, 1, 1, srcSheet.getLastColumn()).getValues()[0];
     targetSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    
+
     // Formater l'en-tête
     targetSheet.getRange(1, 1, 1, headers.length)
       .setFontWeight('bold')
       .setBackground('#C6E0B4');
+
+    logLine('INFO', '    📋 En-têtes copiés de ' + srcName + ' vers ' + cacheName);
+  } else {
+    logLine('WARN', '⚠️ Impossible de trouver l\'onglet source pour ' + cacheName + ' (cherché: ' + srcName + ')');
   }
 }
 
