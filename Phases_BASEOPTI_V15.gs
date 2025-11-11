@@ -171,14 +171,15 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
   for (const student of students) {
     let placed = false;
 
-    // Trouver une classe compatible
-    for (const classe in remainingQuotas) {
-      // ✅ V15 : Vérifier que la classe offre TOUTES les contraintes
-      const classCapabilities = capabilities[classe];
-      if (!classCapabilities) {
-        continue; // Classe non configurée, skip
-      }
+    // ✅ V15 FIX : Trier les classes par spécificité (préférer match exact)
+    // Élève CHAV seul → préférer classe offrant [CHAV] vs [ITA,CHAV]
+    const compatibleClasses = [];
 
+    for (const classe in remainingQuotas) {
+      const classCapabilities = capabilities[classe];
+      if (!classCapabilities) continue;
+
+      // Vérifier que la classe offre TOUTES les contraintes
       let canAcceptAll = true;
       for (const constraint of student.constraints) {
         if (!classCapabilities[constraint]) {
@@ -187,11 +188,9 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
         }
       }
 
-      if (!canAcceptAll) {
-        continue; // Cette classe ne peut pas accepter toutes les contraintes
-      }
+      if (!canAcceptAll) continue;
 
-      // ✅ Vérifier que la classe a encore du quota pour TOUTES les contraintes
+      // Vérifier que la classe a encore du quota pour TOUTES les contraintes
       let hasQuotaForAll = true;
       for (const constraint of student.constraints) {
         const quota = remainingQuotas[classe][constraint] || 0;
@@ -201,28 +200,42 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI_V15(ctx) {
         }
       }
 
-      if (!hasQuotaForAll) {
-        continue; // Pas assez de quota
+      if (!hasQuotaForAll) continue;
+
+      // Calculer le score de spécificité (plus bas = meilleur match)
+      let extraOptions = 0;
+      for (const opt in classCapabilities) {
+        if (classCapabilities[opt] && student.constraints.indexOf(opt) === -1) {
+          extraOptions++; // Cette classe offre des options non demandées
+        }
       }
 
+      compatibleClasses.push({ classe: classe, extraOptions: extraOptions });
+    }
+
+    // Trier par spécificité (moins d'options extra = meilleur)
+    compatibleClasses.sort((a, b) => a.extraOptions - b.extraOptions);
+
+    // Prendre la première classe compatible (meilleur match)
+    if (compatibleClasses.length > 0) {
+      const bestMatch = compatibleClasses[0].classe;
+
       // ✅ PLACER l'élève
-      data[student.rowIndex][idxAssigned] = classe;
+      data[student.rowIndex][idxAssigned] = bestMatch;
 
       // Décrémenter tous les quotas
       for (const constraint of student.constraints) {
-        remainingQuotas[classe][constraint]--;
+        remainingQuotas[bestMatch][constraint]--;
         stats.byConstraint[constraint] = (stats.byConstraint[constraint] || 0) + 1;
       }
 
-      stats.byClass[classe] = (stats.byClass[classe] || 0) + 1;
+      stats.byClass[bestMatch] = (stats.byClass[bestMatch] || 0) + 1;
       stats.placed++;
       placed = true;
 
       const constraintStr = student.constraints.join('+');
       const nameStr = (student.prenom + ' ' + student.nom).trim() || '(sans nom)';
-      placementLog.push('  ✅ ' + nameStr + ' (' + constraintStr + ') → ' + classe);
-
-      break; // Élève placé, passer au suivant
+      placementLog.push('  ✅ ' + nameStr + ' (' + constraintStr + ') → ' + bestMatch);
     }
 
     if (!placed) {
