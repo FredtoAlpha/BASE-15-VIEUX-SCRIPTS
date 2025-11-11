@@ -50,6 +50,100 @@ function generateHeterogeneityReport() {
   };
 }
 
+function resolveHeterogeneityWeights() {
+  if (typeof getHeterogeneityWeights === 'function') {
+    return getHeterogeneityWeights();
+  }
+
+  return {
+    COM: { intra: 2.0, inter: 2.0 },
+    TRA: { intra: 1.5, inter: 1.2 },
+    PART: { intra: 1.2, inter: 1.0 },
+    ABS: { intra: 0.8, inter: 0.8 }
+  };
+}
+
+function safeAverage(values) {
+  if (typeof average === 'function') {
+    return average(values);
+  }
+
+  if (!values || values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function safeVariance(values) {
+  if (typeof variance === 'function') {
+    return variance(values);
+  }
+
+  if (!values || values.length === 0) {
+    return 0;
+  }
+
+  const avg = safeAverage(values);
+  return values.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / values.length;
+}
+
+function computeHeterogeneityScoreFallback(classStats, weights) {
+  const classes = Object.keys(classStats);
+
+  if (classes.length === 0) {
+    return {
+      score: 0,
+      breakdown: [],
+      formula: 'Σ(intraStd × poids_intra) / (1 + Σ(variance_moy × poids_inter))',
+      numerator: 0,
+      denominator: 1
+    };
+  }
+
+  const metrics = [
+    { key: 'COM', avgKey: 'avgCOM', stdKey: 'stdCOM' },
+    { key: 'TRA', avgKey: 'avgTRA', stdKey: 'stdTRA' },
+    { key: 'PART', avgKey: 'avgPART', stdKey: 'stdPART' },
+    { key: 'ABS', avgKey: 'avgABS', stdKey: 'stdABS' }
+  ];
+
+  let numerator = 0;
+  let denominator = 1;
+  const breakdown = [];
+
+  metrics.forEach(metric => {
+    const metricWeights = weights[metric.key] || { intra: 1, inter: 1 };
+    const averages = classes.map(classe => classStats[classe][metric.avgKey] || 0);
+    const stds = classes.map(classe => classStats[classe][metric.stdKey] || 0);
+
+    const interVariance = safeVariance(averages);
+    const intraStd = safeAverage(stds);
+    const intraContribution = intraStd * metricWeights.intra;
+    const interContribution = interVariance * metricWeights.inter;
+
+    numerator += intraContribution;
+    denominator += interContribution;
+
+    breakdown.push({
+      metric: metric.key,
+      intraStd: intraStd,
+      interVariance: interVariance,
+      weights: metricWeights,
+      intraContribution: intraContribution,
+      interContribution: interContribution
+    });
+  });
+
+  return {
+    score: denominator === 0 ? 0 : numerator / denominator,
+    breakdown: breakdown,
+    formula: 'Σ(intraStd × poids_intra) / (1 + Σ(variance_moy × poids_inter))',
+    numerator: numerator,
+    denominator: denominator
+  };
+}
+
 /**
  * Effectue une analyse complète des classes
  */
@@ -76,7 +170,11 @@ function performFullAnalysis(ss) {
     warnings: [],
     strengths: []
   };
-  
+
+  const weights = resolveHeterogeneityWeights();
+  const totalIntraWeight = Object.values(weights).reduce((sum, w) => sum + w.intra, 0);
+  analysis.global.weights = weights;
+
   // Lire les données depuis _BASEOPTI
   const baseSheet = ss.getSheetByName('_BASEOPTI');
   if (!baseSheet) {
@@ -101,9 +199,10 @@ function performFullAnalysis(ss) {
     nom: headers.indexOf('NOM'),
     prenom: headers.indexOf('PRENOM')
   };
-  
+
   // Collecter les données par classe
   const classData = {};
+  const classStatsForScore = {};
   
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -183,8 +282,27 @@ function performFullAnalysis(ss) {
     });
     
     // Score d'hétérogénéité de la classe
-    stats.scoreHeterogeneite = (stats.ecartTypes.COM * 2 + stats.ecartTypes.TRA) / 3;
-    
+    const intraScoreNumerator =
+      stats.ecartTypes.COM * weights.COM.intra +
+      stats.ecartTypes.TRA * weights.TRA.intra +
+      stats.ecartTypes.PART * weights.PART.intra +
+      stats.ecartTypes.ABS * weights.ABS.intra;
+    stats.scoreHeterogeneite = totalIntraWeight > 0
+      ? intraScoreNumerator / totalIntraWeight
+      : 0;
+
+    classStatsForScore[classe] = {
+      count: stats.effectif,
+      avgCOM: stats.moyennes.COM,
+      avgTRA: stats.moyennes.TRA,
+      avgPART: stats.moyennes.PART,
+      avgABS: stats.moyennes.ABS,
+      stdCOM: stats.ecartTypes.COM,
+      stdTRA: stats.ecartTypes.TRA,
+      stdPART: stats.ecartTypes.PART,
+      stdABS: stats.ecartTypes.ABS
+    };
+
     analysis.classes[classe] = stats;
   });
   
@@ -204,9 +322,19 @@ function performFullAnalysis(ss) {
     analysis.global.parityM = 100 - analysis.global.parityF;
     
     // Score d'hétérogénéité global
-    const interClassVarianceCOM = variance(allClasses.map(c => c.moyennes.COM));
-    const avgIntraClassStdCOM = average(allClasses.map(c => c.ecartTypes.COM));
-    analysis.global.heterogeneityScore = avgIntraClassStdCOM / (1 + interClassVarianceCOM);
+    let scoreResult = null;
+    if (typeof calculateHeterogeneityScore === 'function') {
+      scoreResult = calculateHeterogeneityScore(classStatsForScore, { returnBreakdown: true });
+    }
+
+    if (!scoreResult || typeof scoreResult !== 'object') {
+      scoreResult = computeHeterogeneityScoreFallback(classStatsForScore, weights);
+    }
+
+    analysis.global.heterogeneityScore = scoreResult.score || 0;
+    analysis.global.scoreBreakdown = scoreResult.breakdown || [];
+    analysis.global.scoreFormula = scoreResult.formula || 'Σ(intraStd × poids_intra) / (1 + Σ(variance_moy × poids_inter))';
+    analysis.global.weights = weights;
   }
   
   // Identifier les points forts et les avertissements
@@ -268,8 +396,25 @@ function writeReportHeader(sheet, analysis) {
   
   sheet.getRange(row, 1).setValue('Score d\'hétérogénéité global: ' + analysis.global.heterogeneityScore.toFixed(2));
   sheet.getRange(row, 1).setFontWeight('bold');
-  
-  return row + 2;
+  row += 1;
+
+  if (analysis.global.scoreFormula) {
+    sheet.getRange(row, 1)
+      .setValue('Formule: ' + analysis.global.scoreFormula)
+      .setFontStyle('italic');
+    row += 1;
+  }
+
+  if (analysis.global.weights) {
+    const weightSummary = Object
+      .entries(analysis.global.weights)
+      .map(([metric, weight]) => `${metric}=intra:${weight.intra}/inter:${weight.inter}`)
+      .join(' · ');
+    sheet.getRange(row, 1).setValue('Poids (intra/inter): ' + weightSummary);
+    row += 1;
+  }
+
+  return row + 1;
 }
 
 /**
@@ -288,13 +433,38 @@ function writeGlobalStats(sheet, analysis) {
     ['Parité globale', `${analysis.global.parityF}%F / ${analysis.global.parityM}%M`],
     ['Moyenne COM globale', analysis.global.avgCOM.toFixed(2)],
     ['Moyenne TRA globale', analysis.global.avgTRA.toFixed(2)],
+    ['Moyenne PART globale', analysis.global.avgPART.toFixed(2)],
+    ['Moyenne ABS globale', analysis.global.avgABS.toFixed(2)],
     ['Score hétérogénéité', analysis.global.heterogeneityScore.toFixed(2)]
   ];
-  
+
   sheet.getRange(row, 1, globalData.length, 2).setValues(globalData);
   sheet.getRange(row, 1, 1, 2).setFontWeight('bold').setBackground('#F0F0F0');
-  
-  return row + globalData.length + 2;
+
+  row += globalData.length + 2;
+
+  if (analysis.global.scoreBreakdown && analysis.global.scoreBreakdown.length > 0) {
+    const breakdownHeaders = ['Critère', 'σ moyen (intra)', 'Poids intra', 'Contribution intra',
+      'Variance moy (inter)', 'Poids inter', 'Contribution inter'];
+    const breakdownRows = analysis.global.scoreBreakdown.map(component => [
+      component.metric,
+      component.intraStd.toFixed(3),
+      component.weights.intra,
+      component.intraContribution.toFixed(3),
+      component.interVariance.toFixed(3),
+      component.weights.inter,
+      component.interContribution.toFixed(3)
+    ]);
+
+    const breakdownData = [breakdownHeaders, ...breakdownRows];
+    sheet.getRange(row, 1, breakdownData.length, breakdownHeaders.length).setValues(breakdownData);
+    sheet.getRange(row, 1, 1, breakdownHeaders.length)
+      .setFontWeight('bold')
+      .setBackground('#F0F0F0');
+    row += breakdownData.length + 2;
+  }
+
+  return row;
 }
 
 /**
@@ -309,11 +479,16 @@ function writeClassDetails(sheet, analysis) {
   
   // En-têtes
   const headers = [
-    'Classe', 'Effectif', 'Parité', 
-    'Moy COM', 'σ COM', 
+    'Classe', 'Effectif', 'Parité',
+    'Moy COM', 'σ COM',
     'Moy TRA', 'σ TRA',
-    'Score Hétérog.',
-    'Distribution COM (1-2-3-4)'
+    'Moy PART', 'σ PART',
+    'Moy ABS', 'σ ABS',
+    'Score Hétérog. intra',
+    'Distribution COM (1-2-3-4)',
+    'Distribution TRA (1-2-3-4)',
+    'Distribution PART (1-2-3-4)',
+    'Distribution ABS (1-2-3-4)'
   ];
   
   sheet.getRange(row, 1, 1, headers.length).setValues([headers]);
@@ -323,7 +498,10 @@ function writeClassDetails(sheet, analysis) {
   // Données par classe
   Object.entries(analysis.classes).forEach(([classe, stats]) => {
     const distCOM = `${stats.distributions.COM[1]}-${stats.distributions.COM[2]}-${stats.distributions.COM[3]}-${stats.distributions.COM[4]}`;
-    
+    const distTRA = `${stats.distributions.TRA[1]}-${stats.distributions.TRA[2]}-${stats.distributions.TRA[3]}-${stats.distributions.TRA[4]}`;
+    const distPART = `${stats.distributions.PART[1]}-${stats.distributions.PART[2]}-${stats.distributions.PART[3]}-${stats.distributions.PART[4]}`;
+    const distABS = `${stats.distributions.ABS[1]}-${stats.distributions.ABS[2]}-${stats.distributions.ABS[3]}-${stats.distributions.ABS[4]}`;
+
     const rowData = [
       classe,
       stats.effectif,
@@ -332,14 +510,21 @@ function writeClassDetails(sheet, analysis) {
       stats.ecartTypes.COM.toFixed(2),
       stats.moyennes.TRA.toFixed(2),
       stats.ecartTypes.TRA.toFixed(2),
+      stats.moyennes.PART.toFixed(2),
+      stats.ecartTypes.PART.toFixed(2),
+      stats.moyennes.ABS.toFixed(2),
+      stats.ecartTypes.ABS.toFixed(2),
       stats.scoreHeterogeneite.toFixed(2),
-      distCOM
+      distCOM,
+      distTRA,
+      distPART,
+      distABS
     ];
     
     sheet.getRange(row, 1, 1, rowData.length).setValues([rowData]);
     
     // Colorier selon le score d'hétérogénéité
-    const scoreCell = sheet.getRange(row, 8);
+    const scoreCell = sheet.getRange(row, 12);
     if (stats.scoreHeterogeneite > 1.0) {
       scoreCell.setBackground('#C8E6C9'); // Vert
     } else if (stats.scoreHeterogeneite < 0.5) {
@@ -462,7 +647,7 @@ function writeRecommendations(sheet, analysis) {
 function formatReport(sheet) {
   // Ajuster les largeurs de colonnes
   sheet.setColumnWidth(1, 200);
-  for (let i = 2; i <= 9; i++) {
+  for (let i = 2; i <= 16; i++) {
     sheet.setColumnWidth(i, 100);
   }
   
@@ -503,6 +688,7 @@ function testHeterogeneityAnalysis() {
   const headers = data[0];
   const indices = {
     assigned: headers.indexOf('_CLASS_ASSIGNED'),
+    placed: headers.indexOf('_PLACED'),
     com: headers.indexOf('COM'),
     tra: headers.indexOf('TRA'),
     part: headers.indexOf('PART'),
@@ -510,15 +696,31 @@ function testHeterogeneityAnalysis() {
   };
   
   const analysis = analyzeClassHeterogeneity(data, indices, ctx);
-  
+
   console.log('📊 Résultats:');
   console.log('Score global:', analysis.globalScore.toFixed(2));
+  if (analysis.scoreFormula) {
+    console.log('Formule score:', analysis.scoreFormula);
+  }
+  if (analysis.scoreBreakdown && analysis.scoreBreakdown.length > 0) {
+    console.log('Décomposition:');
+    analysis.scoreBreakdown.forEach(component => {
+      console.log(`  ${component.metric} → intra ${component.intraStd.toFixed(2)}×${component.weights.intra}` +
+        `=${component.intraContribution.toFixed(2)}, inter ${component.interVariance.toFixed(2)}×${component.weights.inter}` +
+        `=${component.interContribution.toFixed(2)}`);
+    });
+  }
   console.log('\nPar classe:');
-  
+
   Object.entries(analysis.classStats).forEach(([classe, stats]) => {
-    console.log(`${classe}: COM=${stats.avgCOM.toFixed(2)} (σ=${stats.stdCOM.toFixed(2)})`);
+    console.log(
+      `${classe}: Moy[COM/TRA/PART/ABS]=${stats.avgCOM.toFixed(2)}/` +
+      `${stats.avgTRA.toFixed(2)}/${stats.avgPART.toFixed(2)}/${stats.avgABS.toFixed(2)} | ` +
+      `σ=${stats.stdCOM.toFixed(2)}/${stats.stdTRA.toFixed(2)}/` +
+      `${stats.stdPART.toFixed(2)}/${stats.stdABS.toFixed(2)}`
+    );
   });
-  
+
   return analysis;
 }
 
