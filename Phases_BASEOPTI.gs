@@ -13,6 +13,31 @@
  */
 
 // ===================================================================
+// NORMALISATION DES TAGS OPTIONS/LV2
+// ===================================================================
+
+/**
+ * ✅ Normalise un tag d'option ou LV2 (copie depuis OptiConfig_System.gs)
+ * Voir normalizeOptionTag_() dans OptiConfig_System.gs pour documentation complète
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let tag = String(raw).trim().toUpperCase();
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+  tag = tag.replace(/\(.*?\)/g, '');
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, '');
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+  const synonyms = {
+    'ITALIEN': 'ITA', 'ITALIE': 'ITA', 'ESPAGNOL': 'ESP', 'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL', 'ALLEMAGNE': 'ALL', 'CHINOIS': 'CHI', 'CHINE': 'CHI',
+    'LATIN': 'LAT', 'GREC': 'GRE', 'PORTUGUAIS': 'PT', 'PORTUGAL': 'PT',
+    'CHEVAL': 'CHAV'
+  };
+  return synonyms[tag] || tag;
+}
+
+// ===================================================================
 // PHASE 1 - OPTIONS & LV2 (version BASEOPTI)
 // ===================================================================
 
@@ -29,10 +54,11 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI(ctx) {
   logLine('INFO', '🔍 Élèves disponibles : ' + free.length);
 
   // 🔍 DEBUG : Compter combien d'élèves ont ITA/CHAV/etc.
+  // ✅ NORMALISATION : Applique normalizeOptionTag_() pour cohérence avec quotas
   const debugCounts = { ITA: 0, CHAV: 0, ESP: 0, ALL: 0, PT: 0 };
   free.forEach(function(s) {
-    const lv2 = String(s.LV2 || '').trim().toUpperCase();
-    const opt = String(s.OPT || '').trim().toUpperCase();
+    const lv2 = normalizeOptionTag_(String(s.LV2 || ''));
+    const opt = normalizeOptionTag_(String(s.OPT || ''));
     if (lv2 === 'ITA') debugCounts.ITA++;
     if (lv2 === 'ESP') debugCounts.ESP++;
     if (lv2 === 'ALL') debugCounts.ALL++;
@@ -56,18 +82,19 @@ function Phase1I_dispatchOptionsLV2_BASEOPTI(ctx) {
       if (quota <= 0) continue;
 
       // Filtrer par type de contrainte
+      // ✅ NORMALISATION : Applique normalizeOptionTag_() pour cohérence avec quotas
       let candidates = [];
 
       if (optName === 'ITA' || optName === 'ESP' || optName === 'ALL' || optName === 'PT') {
         // LV2
         candidates = free.filter(function(s) {
-          const lv2 = String(s.LV2 || '').trim().toUpperCase();
+          const lv2 = normalizeOptionTag_(String(s.LV2 || ''));
           return lv2 === optName && !s._PLACED;
         });
       } else {
         // OPT (CHAV, LATIN, etc.)
         candidates = free.filter(function(s) {
-          const opt = String(s.OPT || '').trim().toUpperCase();
+          const opt = normalizeOptionTag_(String(s.OPT || ''));
           return opt === optName && !s._PLACED;
         });
       }
@@ -170,16 +197,17 @@ function Phase2I_applyDissoAsso_BASEOPTI(ctx) {
     }
 
     // RÈGLE CRITIQUE : Déterminer la classe cible selon les contraintes OPT/LV2
+    // ✅ NORMALISATION : Applique normalizeOptionTag_() pour cohérence
     let targetClass = null;
     const constraints = [];
 
     grp.forEach(function(s) {
-      const opt = String(s.OPT || '').trim().toUpperCase();
-      const lv2 = String(s.LV2 || '').trim().toUpperCase();
+      const opt = normalizeOptionTag_(String(s.OPT || ''));
+      const lv2 = normalizeOptionTag_(String(s.LV2 || ''));
 
       if (opt === 'CHAV') constraints.push({ type: 'OPT', value: 'CHAV', target: '6°3' });
       else if (lv2 === 'ITA') constraints.push({ type: 'LV2', value: 'ITA', target: '6°1' });
-      else if (opt === 'LATIN') constraints.push({ type: 'OPT', value: 'LATIN', target: null }); // À définir
+      else if (opt === 'LAT') constraints.push({ type: 'OPT', value: 'LAT', target: null }); // À définir
       // Ajouter d'autres mappings OPT/LV2 → classe si nécessaire
     });
 
@@ -326,10 +354,11 @@ function findLeastPopulatedClass_(ctx) {
  * Trouve la meilleure classe pour un élève selon ses OPT/LV2
  * en évitant les classes déjà utilisées (pour DISSO)
  * ✅ CORRECTION CRITIQUE : Vérifie que la classe NE CONTIENT PAS déjà un élève avec le même code D
+ * ✅ NORMALISATION : Applique normalizeOptionTag_() pour cohérence avec quotas
  */
 function findBestClassForStudent_(ctx, student, usedClasses) {
-  const opt = String(student.OPT || '').trim().toUpperCase();
-  const lv2 = String(student.LV2 || '').trim().toUpperCase();
+  const opt = normalizeOptionTag_(String(student.OPT || ''));
+  const lv2 = normalizeOptionTag_(String(student.LV2 || ''));
   const codeD = String(student.D || '').trim().toUpperCase();
 
   // Mapping OPT/LV2 → classe préférentielle

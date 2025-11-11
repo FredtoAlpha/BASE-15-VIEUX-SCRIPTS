@@ -585,22 +585,80 @@ function isEleveMobile_(stu) {
 }
 
 /**
+ * ✅ Normalise un tag d'option ou LV2 (copie depuis OptiConfig_System.gs)
+ * Voir normalizeOptionTag_() pour documentation complète
+ */
+function normalizeOptionTag_(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let tag = String(raw).trim().toUpperCase();
+  tag = tag.replace(/^(LV2|OPTION|OPT|LANGUE)\s*[-:\s]*/i, '');
+  tag = tag.replace(/\(.*?\)/g, '');
+  tag = tag.replace(/\s+\d+$/g, '');
+  tag = tag.replace(/\d+$/g, '');
+  tag = tag.replace(/[.,;:\-_\s]+/g, '');
+  const synonyms = {
+    'ITALIEN': 'ITA', 'ITALIE': 'ITA', 'ESPAGNOL': 'ESP', 'ESPAGNE': 'ESP',
+    'ALLEMAND': 'ALL', 'ALLEMAGNE': 'ALL', 'CHINOIS': 'CHI', 'CHINE': 'CHI',
+    'LATIN': 'LAT', 'GREC': 'GRE', 'PORTUGUAIS': 'PT', 'PORTUGAL': 'PT',
+    'CHEVAL': 'CHAV'
+  };
+  return synonyms[tag] || tag;
+}
+
+/**
  * Vérifie si un swap est faisable (quotas, groupes)
+ * ✅ FIX CRITIQUE: Bloque les swaps qui violent les contraintes OPT/LV2
+ * ✅ CORRECTION NORMALISATION : Applique normalizeOptionTag_() avant comparaison
  */
 function isSwapFeasible_(stu1, stu2, cls1, cls2, ctx) {
-  // Vérifier quotas LV2/OPT
-  // TODO: Implémenter vérification des quotas
-  
-  // Vérifier groupes ASSO (ne pas séparer)
+  // ===== 1. VÉRIFIER QUOTAS LV2/OPT =====
+  // ✅ RÈGLE: Un élève avec OPT/LV2 NE PEUT ÊTRE DÉPLACÉ que vers une classe qui propose cette option
+
+  // Extraire OPT/LV2 des deux élèves et NORMALISER
+  const opt1 = normalizeOptionTag_(String(stu1.OPT || '').trim());
+  const lv21 = normalizeOptionTag_(String(stu1.LV2 || '').trim());
+  const opt2 = normalizeOptionTag_(String(stu2.OPT || '').trim());
+  const lv22 = normalizeOptionTag_(String(stu2.LV2 || '').trim());
+
+  // Récupérer les quotas configurés depuis ctx (DÉJÀ NORMALISÉS par buildCtx_V2)
+  const quotas = ctx.quotas || {};
+  const quotasCls1 = quotas[cls1] || {};
+  const quotasCls2 = quotas[cls2] || {};
+
+  // Vérifier que stu1 peut aller dans cls2
+  if (opt1 && !quotasCls2[opt1]) {
+    // stu1 a un OPT (ex: CHAV) mais cls2 ne propose pas cet OPT
+    logLine('DEBUG', '  🚫 Swap bloqué: ' + (stu1.NOM || 'élève') + ' (OPT=' + opt1 + ') ne peut aller en ' + cls2 + ' (pas de quota ' + opt1 + ')');
+    return false;
+  }
+  if (lv21 && !quotasCls2[lv21]) {
+    // stu1 a une LV2 (ex: ITA) mais cls2 ne propose pas cette LV2
+    logLine('DEBUG', '  🚫 Swap bloqué: ' + (stu1.NOM || 'élève') + ' (LV2=' + lv21 + ') ne peut aller en ' + cls2 + ' (pas de quota ' + lv21 + ')');
+    return false;
+  }
+
+  // Vérifier que stu2 peut aller dans cls1
+  if (opt2 && !quotasCls1[opt2]) {
+    // stu2 a un OPT mais cls1 ne propose pas cet OPT
+    logLine('DEBUG', '  🚫 Swap bloqué: ' + (stu2.NOM || 'élève') + ' (OPT=' + opt2 + ') ne peut aller en ' + cls1 + ' (pas de quota ' + opt2 + ')');
+    return false;
+  }
+  if (lv22 && !quotasCls1[lv22]) {
+    // stu2 a une LV2 mais cls1 ne propose pas cette LV2
+    logLine('DEBUG', '  🚫 Swap bloqué: ' + (stu2.NOM || 'élève') + ' (LV2=' + lv22 + ') ne peut aller en ' + cls1 + ' (pas de quota ' + lv22 + ')');
+    return false;
+  }
+
+  // ===== 2. VÉRIFIER GROUPES ASSO (ne pas séparer) =====
   const asso1 = String(stu1.ASSO || stu1.A || '').trim();
   const asso2 = String(stu2.ASSO || stu2.A || '').trim();
   if (asso1 && asso1 === asso2) return false; // Même groupe ASSO
-  
-  // Vérifier groupes DISSO (ne pas regrouper)
+
+  // ===== 3. VÉRIFIER GROUPES DISSO (ne pas regrouper) =====
   const disso1 = String(stu1.DISSO || stu1.D || '').trim();
   const disso2 = String(stu2.DISSO || stu2.D || '').trim();
   if (disso1 && disso1 === disso2) return false; // Même groupe DISSO
-  
+
   return true;
 }
 
