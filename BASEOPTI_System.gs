@@ -348,6 +348,154 @@ function baseGetPlaced_() {
 }
 
 /**
+ * ✅ V12 : Analyse les contraintes multiples (OPT + LV2)
+ * Retourne un objet détaillant les élèves par type de contrainte
+ *
+ * @param {string} sheetName - Nom de l'onglet à analyser (défaut: '_BASEOPTI')
+ * @returns {Object} Analyse détaillée des contraintes
+ *
+ * Structure retournée:
+ * {
+ *   total: 50,
+ *   byConstraint: {
+ *     'ITA': { total: 11, details: { 'ITA_only': 5, 'ITA+CHAV': 6 } },
+ *     'CHAV': { total: 15, details: { 'CHAV_only': 9, 'ITA+CHAV': 6 } },
+ *     'LATIN': { total: 19, details: { 'LATIN_only': 19 } }
+ *   },
+ *   multiConstraints: [
+ *     { constraints: ['ITA', 'CHAV'], count: 6, students: [...] }
+ *   ]
+ * }
+ */
+function analyzeMultiConstraints_(sheetName) {
+  sheetName = sheetName || '_BASEOPTI';
+
+  const sh = SpreadsheetApp.getActive().getSheetByName(sheetName);
+  if (!sh) {
+    throw new Error(sheetName + ' introuvable');
+  }
+
+  const data = sh.getDataRange().getValues();
+  if (data.length < 2) {
+    return { total: 0, byConstraint: {}, multiConstraints: [] };
+  }
+
+  const headers = data[0];
+
+  // ✅ Trouver dynamiquement les colonnes OPT et LV2 (JAMAIS de valeurs en dur !)
+  const idxOPT = headers.indexOf('OPT');
+  const idxLV2 = headers.indexOf('LV2');
+  const idxNom = headers.indexOf('NOM');
+  const idxPrenom = headers.indexOf('PRENOM');
+  const idxID = headers.indexOf('ID_ELEVE') >= 0 ? headers.indexOf('ID_ELEVE') : headers.indexOf('_ID');
+
+  if (idxOPT === -1 && idxLV2 === -1) {
+    logLine('WARN', '⚠️ Aucune colonne OPT ou LV2 trouvée dans ' + sheetName);
+    return { total: 0, byConstraint: {}, multiConstraints: [] };
+  }
+
+  const students = [];
+  const constraintCounts = {}; // { 'ITA': 11, 'CHAV': 15, ... }
+  const constraintDetails = {}; // { 'ITA': { 'ITA_only': 5, 'ITA+CHAV': 6 }, ... }
+  const multiConstraintGroups = {}; // { 'ITA+CHAV': { count: 6, students: [...] } }
+
+  // Parcourir tous les élèves
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+
+    // Filtrer les lignes vides
+    const idValue = idxID >= 0 ? row[idxID] : null;
+    if (!idValue || String(idValue).trim() === '') continue;
+
+    const opt = idxOPT >= 0 ? String(row[idxOPT] || '').trim().toUpperCase() : '';
+    const lv2 = idxLV2 >= 0 ? String(row[idxLV2] || '').trim().toUpperCase() : '';
+
+    // Ignorer les élèves sans contrainte (ESP est considéré comme "pas de contrainte")
+    if (!opt && (!lv2 || lv2 === 'ESP')) continue;
+
+    const constraints = [];
+    if (lv2 && lv2 !== 'ESP') constraints.push(lv2);
+    if (opt) constraints.push(opt);
+
+    // Créer l'objet élève
+    const student = {
+      id: idValue,
+      nom: idxNom >= 0 ? row[idxNom] : '',
+      prenom: idxPrenom >= 0 ? row[idxPrenom] : '',
+      opt: opt,
+      lv2: lv2,
+      constraints: constraints,
+      constraintKey: constraints.sort().join('+') // Ex: "CHAV+ITA" (trié alphabétiquement)
+    };
+
+    students.push(student);
+
+    // Compter chaque contrainte individuellement
+    constraints.forEach(function(c) {
+      constraintCounts[c] = (constraintCounts[c] || 0) + 1;
+    });
+
+    // Détailler les combinaisons
+    const key = student.constraintKey;
+    if (!multiConstraintGroups[key]) {
+      multiConstraintGroups[key] = { constraints: constraints, count: 0, students: [] };
+    }
+    multiConstraintGroups[key].count++;
+    multiConstraintGroups[key].students.push(student);
+  }
+
+  // Construire les détails par contrainte
+  Object.keys(constraintCounts).forEach(function(constraint) {
+    constraintDetails[constraint] = {};
+
+    // Compter les single et multi pour chaque contrainte
+    students.forEach(function(s) {
+      if (s.constraints.indexOf(constraint) >= 0) {
+        const detailKey = s.constraintKey;
+        if (!constraintDetails[constraint][detailKey]) {
+          constraintDetails[constraint][detailKey] = 0;
+        }
+        constraintDetails[constraint][detailKey]++;
+      }
+    });
+  });
+
+  // Construire le résultat
+  const byConstraint = {};
+  Object.keys(constraintCounts).forEach(function(c) {
+    byConstraint[c] = {
+      total: constraintCounts[c],
+      details: constraintDetails[c]
+    };
+  });
+
+  const multiConstraints = Object.keys(multiConstraintGroups).map(function(key) {
+    return multiConstraintGroups[key];
+  }).sort(function(a, b) {
+    return b.count - a.count; // Trier par count décroissant
+  });
+
+  const result = {
+    total: students.length,
+    byConstraint: byConstraint,
+    multiConstraints: multiConstraints,
+    students: students // Pour debug/analyse
+  };
+
+  // Log résumé
+  logLine('INFO', '📊 Analyse multi-contraintes (' + sheetName + '):');
+  logLine('INFO', '   Total élèves avec contraintes: ' + students.length);
+  Object.keys(byConstraint).forEach(function(c) {
+    const details = Object.keys(byConstraint[c].details).map(function(k) {
+      return k + '=' + byConstraint[c].details[k];
+    }).join(', ');
+    logLine('INFO', '   ' + c + ': ' + byConstraint[c].total + ' (' + details + ')');
+  });
+
+  return result;
+}
+
+/**
  * Marque des élèves comme placés
  *
  * @param {Array<string>} ids - Liste des _ID à marquer

@@ -1086,8 +1086,46 @@ const OptimizationPanel = {
 
     document.getElementById('optionsDetected').classList.remove('hidden');
 
-    // ✅ NOUVEAU : Afficher les statistiques avec badges
-    this.displayOptionsStats();
+    // ✅ V12 : Analyser les multi-contraintes côté serveur
+    console.log('🔍 Appel de getMultiConstraintAnalysis...');
+    google.script.run
+      .withSuccessHandler((result) => {
+        if (result.success) {
+          console.log('✅ Analyse multi-contraintes reçue:', result.data);
+          this.multiConstraintAnalysis = result.data;
+
+          // Afficher les statistiques avec breakdown multi-contraintes
+          this.displayOptionsStats();
+
+          // Toast avec info multi-contraintes
+          const multiCount = result.data.multiConstraints.filter(m => m.constraints.length > 1).length;
+          if (multiCount > 0) {
+            if (typeof toast === 'function') {
+              toast(`✅ ${this.detectedOptions.length} options détectées (dont ${multiCount} combinaisons multi-contraintes)`, 'success');
+            }
+          } else {
+            if (typeof toast === 'function') {
+              toast(`✅ ${this.detectedOptions.length} option(s) détectée(s) (LV2: ${this.detectedLV2.length}, OPT: ${this.detectedOPT.length})`, 'success');
+            }
+          }
+        } else {
+          console.warn('⚠️ Erreur analyse multi-contraintes:', result.error);
+          // Afficher les stats normales sans breakdown
+          this.displayOptionsStats();
+          if (typeof toast === 'function') {
+            toast(`✅ ${this.detectedOptions.length} option(s) détectée(s) (LV2: ${this.detectedLV2.length}, OPT: ${this.detectedOPT.length})`, 'success');
+          }
+        }
+      })
+      .withFailureHandler((error) => {
+        console.error('❌ Échec appel getMultiConstraintAnalysis:', error);
+        // Afficher les stats normales sans breakdown
+        this.displayOptionsStats();
+        if (typeof toast === 'function') {
+          toast(`✅ ${this.detectedOptions.length} option(s) détectée(s) (LV2: ${this.detectedLV2.length}, OPT: ${this.detectedOPT.length})`, 'success');
+        }
+      })
+      .getMultiConstraintAnalysis();
 
     // ✅ Afficher le bouton de distribution automatique
     const autoDistributeSection = document.getElementById('autoDistributeSection');
@@ -1096,56 +1134,126 @@ const OptimizationPanel = {
     }
 
     this.createClassOptionsTable();
-
-    if (typeof toast === 'function') {
-      toast(`✅ ${this.detectedOptions.length} option(s) détectée(s) (LV2: ${this.detectedLV2.length}, OPT: ${this.detectedOPT.length})`, 'success');
-    }
   },
 
   /**
-   * ✅ NOUVEAU : Afficher les statistiques Options/LV2 avec badges
-   * Format : [LAT: 18 élèves] [ITA: 6 élèves] [CHAV: 10 élèves]
+   * ✅ V12 : Afficher les statistiques Options/LV2 avec breakdown multi-contraintes
+   * Format avec multi-contraintes :
+   *   ITA : 11 élèves
+   *     → 5 ITA seul
+   *     → 6 ITA+CHAV
+   *   CHAV : 15 élèves
+   *     → 9 CHAV seul
+   *     → 6 ITA+CHAV
    */
   displayOptionsStats() {
     const statsDisplay = document.getElementById('optionsStatsDisplay');
     const badgesContainer = document.getElementById('optionsStatsBadges');
-    
+
     if (!statsDisplay || !badgesContainer) return;
-    
-    // Combiner LV2 et OPT avec leurs comptages
-    const allStats = [];
-    
-    // Ajouter les LV2
-    this.detectedLV2.forEach(lv2 => {
-      const count = this.lv2Counts[lv2] || 0;
-      allStats.push({ name: lv2, count: count, type: 'LV2' });
-    });
-    
-    // Ajouter les OPT
-    this.detectedOPT.forEach(opt => {
-      const count = this.optCounts[opt] || 0;
-      allStats.push({ name: opt, count: count, type: 'OPT' });
-    });
-    
-    // Trier par nombre d'élèves (décroissant)
-    allStats.sort((a, b) => b.count - a.count);
-    
-    // Générer les badges
-    const badges = allStats.map(stat => {
-      const colorClass = stat.type === 'LV2' 
-        ? 'bg-blue-100 text-blue-800 border-blue-300' 
-        : 'bg-purple-100 text-purple-800 border-purple-300';
-      
-      return `<span class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold border ${colorClass}">
-        ${stat.name}: ${stat.count} élève${stat.count > 1 ? 's' : ''}
-      </span>`;
-    }).join('');
-    
-    if (badges) {
-      badgesContainer.innerHTML = badges;
+
+    // ✅ V12 : Si analyse multi-contraintes disponible, afficher le breakdown détaillé
+    if (this.multiConstraintAnalysis && this.multiConstraintAnalysis.byConstraint) {
+      const analysis = this.multiConstraintAnalysis;
+      let html = '<div class="space-y-2 text-sm">';
+
+      // Combiner et trier toutes les contraintes
+      const allConstraints = Object.keys(analysis.byConstraint).sort((a, b) => {
+        return analysis.byConstraint[b].total - analysis.byConstraint[a].total;
+      });
+
+      allConstraints.forEach(constraintName => {
+        const info = analysis.byConstraint[constraintName];
+        const isLV2 = this.detectedLV2.includes(constraintName);
+        const colorClass = isLV2
+          ? 'bg-blue-50 border-blue-200 text-blue-900'
+          : 'bg-purple-50 border-purple-200 text-purple-900';
+
+        // Construire le badge principal
+        html += `<div class="p-3 rounded-lg border ${colorClass}">`;
+        html += `<div class="font-semibold mb-1">${constraintName} : ${info.total} élève${info.total > 1 ? 's' : ''}</div>`;
+
+        // Afficher le breakdown si multi-contraintes
+        if (Object.keys(info.details).length > 1) {
+          html += '<div class="ml-4 text-xs space-y-0.5 mt-1">';
+
+          // Trier les détails : single d'abord, puis multi
+          const sortedDetails = Object.keys(info.details).sort((a, b) => {
+            const aSingle = a === constraintName || !a.includes('+');
+            const bSingle = b === constraintName || !b.includes('+');
+            if (aSingle && !bSingle) return -1;
+            if (!aSingle && bSingle) return 1;
+            return info.details[b] - info.details[a];
+          });
+
+          sortedDetails.forEach(detailKey => {
+            const count = info.details[detailKey];
+            const label = detailKey === constraintName ? `${detailKey} seul` : detailKey;
+            html += `<div class="text-gray-700">→ ${count} ${label}</div>`;
+          });
+
+          html += '</div>';
+        }
+
+        html += '</div>';
+      });
+
+      html += '</div>';
+
+      // Ajouter un résumé des combinaisons multi-contraintes
+      const multiConstraints = analysis.multiConstraints.filter(m => m.constraints.length > 1);
+      if (multiConstraints.length > 0) {
+        html += '<div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">';
+        html += '<div class="text-sm font-semibold text-amber-900 mb-2">🔗 Multi-contraintes détectées :</div>';
+        html += '<div class="text-xs space-y-1">';
+
+        multiConstraints.forEach(mc => {
+          const key = mc.constraints.sort().join('+');
+          html += `<div class="text-amber-800">• ${key} : ${mc.count} élève${mc.count > 1 ? 's' : ''}</div>`;
+        });
+
+        html += '</div></div>';
+      }
+
+      badgesContainer.innerHTML = html;
       statsDisplay.classList.remove('hidden');
+
     } else {
-      statsDisplay.classList.add('hidden');
+      // ✅ Fallback : Affichage classique sans breakdown (comme avant V12)
+      const allStats = [];
+
+      // Ajouter les LV2
+      this.detectedLV2.forEach(lv2 => {
+        const count = this.lv2Counts[lv2] || 0;
+        allStats.push({ name: lv2, count: count, type: 'LV2' });
+      });
+
+      // Ajouter les OPT
+      this.detectedOPT.forEach(opt => {
+        const count = this.optCounts[opt] || 0;
+        allStats.push({ name: opt, count: count, type: 'OPT' });
+      });
+
+      // Trier par nombre d'élèves (décroissant)
+      allStats.sort((a, b) => b.count - a.count);
+
+      // Générer les badges
+      const badges = allStats.map(stat => {
+        const colorClass = stat.type === 'LV2'
+          ? 'bg-blue-100 text-blue-800 border-blue-300'
+          : 'bg-purple-100 text-purple-800 border-purple-300';
+
+        return `<span class="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold border ${colorClass}">
+          ${stat.name}: ${stat.count} élève${stat.count > 1 ? 's' : ''}
+        </span>`;
+      }).join('');
+
+      if (badges) {
+        badgesContainer.innerHTML = badges;
+        statsDisplay.classList.remove('hidden');
+      } else {
+        statsDisplay.classList.add('hidden');
+      }
     }
   },
 
@@ -1209,8 +1317,9 @@ const OptimizationPanel = {
   },
 
   /**
-   * ✅ NOUVEAU : Distribution automatique des quotas d'options/LV2
+   * ✅ V12 : Distribution automatique des quotas d'options/LV2
    * Répartit équitablement chaque option sur les classes disponibles
+   * NOTE: Les élèves avec multi-contraintes (ex: ITA+CHAV) comptent pour CHAQUE quota
    */
   autoDistributeQuotas() {
     if (!this.detectedOptions || this.detectedOptions.length === 0) {
@@ -1220,30 +1329,44 @@ const OptimizationPanel = {
       return;
     }
 
-    // Compter le nombre d'élèves par option
-    const students = STATE.students || {};
-    const optionCounts = {};
+    // ✅ V12 : Utiliser l'analyse multi-contraintes si disponible (plus précis)
+    let optionCounts = {};
 
-    const flatten = (entry) => {
-      if (!entry) return [];
-      if (Array.isArray(entry)) return entry;
-      if (typeof entry === 'object') {
-        const values = Object.values(entry);
-        const looksLikeStudents = values.every(v => v && typeof v === 'object' && (v.id || v.nom || v.prenom));
-        if (looksLikeStudents) return values;
-        return values.flatMap(flatten);
-      }
-      return [];
-    };
+    if (this.multiConstraintAnalysis && this.multiConstraintAnalysis.byConstraint) {
+      // Utiliser les counts de l'analyse serveur (plus fiable)
+      console.log('✅ Utilisation de l\'analyse multi-contraintes pour la distribution');
+      const analysis = this.multiConstraintAnalysis.byConstraint;
 
-    const allStudents = flatten(students);
-    allStudents.forEach((s) => {
-      if (!s) return;
-      const lv2 = this.normalizeCell(s.lv2 || s.LV2).toUpperCase();
-      const opt = this.normalizeCell(s.opt || s.OPT).toUpperCase();
-      if (lv2) optionCounts[lv2] = (optionCounts[lv2] || 0) + 1;
-      if (opt) optionCounts[opt] = (optionCounts[opt] || 0) + 1;
-    });
+      Object.keys(analysis).forEach(constraintName => {
+        optionCounts[constraintName] = analysis[constraintName].total;
+      });
+
+    } else {
+      // Fallback : Compter depuis STATE.students
+      console.log('⚠️ Analyse multi-contraintes non disponible, fallback sur STATE.students');
+      const students = STATE.students || {};
+
+      const flatten = (entry) => {
+        if (!entry) return [];
+        if (Array.isArray(entry)) return entry;
+        if (typeof entry === 'object') {
+          const values = Object.values(entry);
+          const looksLikeStudents = values.every(v => v && typeof v === 'object' && (v.id || v.nom || v.prenom));
+          if (looksLikeStudents) return values;
+          return values.flatMap(flatten);
+        }
+        return [];
+      };
+
+      const allStudents = flatten(students);
+      allStudents.forEach((s) => {
+        if (!s) return;
+        const lv2 = this.normalizeCell(s.lv2 || s.LV2).toUpperCase();
+        const opt = this.normalizeCell(s.opt || s.OPT).toUpperCase();
+        if (lv2) optionCounts[lv2] = (optionCounts[lv2] || 0) + 1;
+        if (opt) optionCounts[opt] = (optionCounts[opt] || 0) + 1;
+      });
+    }
 
     // Obtenir les classes
     const classes = this.getClassNamesFromState();

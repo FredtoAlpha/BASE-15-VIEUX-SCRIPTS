@@ -701,3 +701,33 @@ function buildCtx_V2(options) {
     weights: optiCtx.weights
   };
 }
+
+/**
+ * ✅ V12 : Retourne l'analyse des multi-contraintes pour l'UI
+ * Appelée par OptimizationPanel.html via google.script.run
+ */
+function getMultiConstraintAnalysis() {
+  try {
+    // Vérifier que _BASEOPTI existe
+    const sh = SpreadsheetApp.getActive().getSheetByName('_BASEOPTI');
+    if (!sh) {
+      return {
+        success: false,
+        error: '_BASEOPTI introuvable. Veuillez d\'abord créer la base OPTI.'
+      };
+    }
+
+    // Analyser les contraintes
+    const analysis = analyzeMultiConstraints_('_BASEOPTI');
+
+    return {
+      success: true,
+      data: analysis
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e.toString()
+    };
+  }
+}
