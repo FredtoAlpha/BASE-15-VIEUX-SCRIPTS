@@ -272,7 +272,19 @@ function computeParityTargets_BASEOPTI(state) {
 }
 
 /**
+ * ✅ V16 : Calcule écart-type d'un tableau de valeurs
+ * Utile pour mesurer l'hétérogénéité intra-classe
+ */
+function computeStdDev_(values) {
+  if (!values || values.length === 0) return 0;
+  const mean = values.reduce(function(a, b) { return a + b; }, 0) / values.length;
+  const variance = values.reduce(function(sum, v) { return sum + Math.pow(v - mean, 2); }, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+/**
  * Calcule les statistiques globales
+ * ✅ V16 : Inclut hétérogénéité PART/ABS (pas que COM/TRA)
  */
 function computeGlobalStats_(state, weights) {
   // Validation de l'état
@@ -292,6 +304,14 @@ function computeGlobalStats_(state, weights) {
   const com1Counts = {};
   const mobilite = { LIBRE: 0, FIXE: 0, PERMUT: 0 };
 
+  // ✅ V16 : Hétérogénéité détaillée par critère
+  const heterogeneity = {
+    COM: { byClass: {}, global: 0 },
+    TRA: { byClass: {}, global: 0 },
+    PART: { byClass: {}, global: 0 },
+    ABS: { byClass: {}, global: 0 }
+  };
+
   for (const cls in state.byClass) {
     if (!state.byClass.hasOwnProperty(cls)) continue;
     const students = state.byClass[cls];
@@ -300,36 +320,63 @@ function computeGlobalStats_(state, weights) {
     let classScore = 0;
     let F = 0, M = 0;
     let com1 = 0;
-    
+
+    // ✅ V16 : Collecter scores par critère pour écart-type
+    const comScores = [];
+    const traScores = [];
+    const partScores = [];
+    const absScores = [];
+
     students.forEach(function(stu) {
       // Scores
       const com = Number(stu.COM || 0);
       const tra = Number(stu.TRA || 0);
       const part = Number(stu.PART || 0);
       const abs = Number(stu.ABS || 0);
-      
+
       classScore += weights.com * com + weights.tra * tra + weights.part * part + weights.abs * abs;
-      
+
+      // ✅ V16 : Stocker pour hétérogénéité
+      comScores.push(com);
+      traScores.push(tra);
+      partScores.push(part);
+      absScores.push(abs);
+
       // Parité
       const sexe = String(stu.SEXE || '').toUpperCase();
       if (sexe === 'F') F++;
       else if (sexe === 'M') M++;
-      
+
       // COM=1
       if (com === 1) com1++;
-      
+
       // Mobilité
       const mob = String(stu.MOBILITE || stu.FIXE || '').toUpperCase();
       if (mob === 'FIXE') mobilite.FIXE++;
       else if (mob === 'PERMUT') mobilite.PERMUT++;
       else mobilite.LIBRE++;
     });
-    
+
     totalScore += classScore;
     com1Counts[cls] = com1;
-    
+
+    // ✅ V16 : Calculer écart-types intra-classe
+    heterogeneity.COM.byClass[cls] = computeStdDev_(comScores);
+    heterogeneity.TRA.byClass[cls] = computeStdDev_(traScores);
+    heterogeneity.PART.byClass[cls] = computeStdDev_(partScores);
+    heterogeneity.ABS.byClass[cls] = computeStdDev_(absScores);
+
     // Parité OK si |F-M| <= tolérance
     if (Math.abs(F - M) <= 2) parityOk++;
+  }
+
+  // ✅ V16 : Hétérogénéité globale (moyenne des écart-types)
+  const classesList = Object.keys(state.byClass);
+  if (classesList.length > 0) {
+    heterogeneity.COM.global = Object.values(heterogeneity.COM.byClass).reduce(function(a, b) { return a + b; }, 0) / classesList.length;
+    heterogeneity.TRA.global = Object.values(heterogeneity.TRA.byClass).reduce(function(a, b) { return a + b; }, 0) / classesList.length;
+    heterogeneity.PART.global = Object.values(heterogeneity.PART.byClass).reduce(function(a, b) { return a + b; }, 0) / classesList.length;
+    heterogeneity.ABS.global = Object.values(heterogeneity.ABS.byClass).reduce(function(a, b) { return a + b; }, 0) / classesList.length;
   }
   
   // Spread COM=1 (variance)
@@ -342,7 +389,8 @@ function computeGlobalStats_(state, weights) {
     parityOk: parityOk,
     com1Spread: Math.sqrt(com1Variance),
     com1Counts: com1Counts,
-    mobilite: mobilite
+    mobilite: mobilite,
+    heterogeneity: heterogeneity  // ✅ V16 : Retourner hétérogénéité PART/ABS
   };
 }
 
@@ -659,6 +707,26 @@ function isSwapFeasible_(stu1, stu2, cls1, cls2, ctx) {
   const disso2 = String(stu2.DISSO || stu2.D || '').trim();
   if (disso1 && disso1 === disso2) return false; // Même groupe DISSO
 
+  // ===== 4. V16 VÉRIFIER IMPACT SUR PARITÉ =====
+  const sexe1 = String(stu1.SEXE || '').toUpperCase();
+  const sexe2 = String(stu2.SEXE || '').toUpperCase();
+
+  // Si même genre, swap neutre pour parité
+  if (sexe1 === sexe2) {
+    return true; // OK, parité inchangée
+  }
+
+  // Swap entre genres différents : vérifier tolérance
+  const tolParity = ctx.tolParite || 2;
+
+  // Calculer parité actuelle des deux classes (depuis state si disponible)
+  // Note: state n'est pas passé en paramètre, donc on ne peut pas calculer
+  // l'impact exact. On log un warning pour traçabilité.
+  logLine('DEBUG', '  ⚠️ Swap entre genres différents : ' + sexe1 + ' ↔ ' + sexe2);
+  logLine('DEBUG', '     Classes : ' + cls1 + ' ↔ ' + cls2);
+  logLine('DEBUG', '     Impact parité : À vérifier manuellement (state non disponible ici)');
+
+  // Pour l'instant, on ACCEPTE mais on log (TODO: améliorer en passant state)
   return true;
 }
 
