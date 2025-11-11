@@ -1339,6 +1339,7 @@ function buildOptionPools(structure, config) {
 // ====================
 
 let __phase4QuotaSuffixesCache = null;
+let __phase4CombinedConstraintTokensCache = {};
 
 function _getQuotaSuffixesForPhase4_() {
     if (__phase4QuotaSuffixesCache) {
@@ -1400,8 +1401,44 @@ function _normalizeConstraintKeyForQuotas_(raw) {
     return key;
 }
 
+function _normalizeCombinedConstraintKeyForQuotas_(raw) {
+    if (!raw) return '';
+    const inside = String(raw).replace(/[\[\]]/g, '');
+    const parts = inside.split(/[+&]/);
+    const normalizedParts = [];
+
+    parts.forEach(function(part) {
+        const normalized = _normalizeConstraintKeyForQuotas_(part);
+        if (normalized) {
+            normalizedParts.push(normalized);
+        }
+    });
+
+    if (normalizedParts.length < 2) {
+        return '';
+    }
+
+    const uniqueSorted = Array.from(new Set(normalizedParts)).sort();
+    return uniqueSorted.join('+');
+}
+
+function _getCombinedConstraintTokens_(comboKey) {
+    if (!comboKey) return [];
+    if (__phase4CombinedConstraintTokensCache[comboKey]) {
+        return __phase4CombinedConstraintTokensCache[comboKey].slice();
+    }
+
+    const tokens = comboKey.split('+').map(function(part) {
+        return _normalizeConstraintKeyForQuotas_(part);
+    }).filter(Boolean);
+
+    __phase4CombinedConstraintTokensCache[comboKey] = tokens;
+    return tokens.slice();
+}
+
 function _buildQuotaMapFromStructure_(structureData) {
     const quotas = {};
+    __phase4CombinedConstraintTokensCache = {};
     if (!structureData || !Array.isArray(structureData.classes)) {
         return quotas;
     }
@@ -1415,10 +1452,27 @@ function _buildQuotaMapFromStructure_(structureData) {
         options.forEach(function(optStr) {
             if (!optStr) return;
             const part = String(optStr).trim();
-            if (!part || part.startsWith('[')) return; // Ignore contraintes combinées ici
+            if (!part) return;
 
-            const pieces = part.split('=');
-            if (pieces.length < 2) return;
+            const combinedMatch = part.match(/^\[([^\]]+)\]\s*(?:=|:)\s*(-?\d+)/);
+            if (combinedMatch) {
+                const comboKey = _normalizeCombinedConstraintKeyForQuotas_(combinedMatch[1]);
+                const value = parseInt(combinedMatch[2], 10);
+                if (!comboKey || isNaN(value) || value < 0) {
+                    return;
+                }
+
+                if (!quotas[classKey]) {
+                    quotas[classKey] = {};
+                }
+                quotas[classKey][comboKey] = (quotas[classKey][comboKey] || 0) + value;
+                return;
+            }
+
+            const piecesEq = part.split('=');
+            const piecesColon = part.split(':');
+            const pieces = (piecesEq.length >= 2) ? piecesEq : ((piecesColon.length >= 2) ? piecesColon : null);
+            if (!pieces) return;
 
             const optionKey = _normalizeConstraintKeyForQuotas_(pieces[0]);
             if (!optionKey) return;
@@ -1444,36 +1498,50 @@ function _getQuotaMapFromStructure_(structureData) {
     return structureData.__quotaMapCache;
 }
 
-function _getStudentConstraintsForQuotas_(student) {
-    const constraints = [];
-    if (!student) return constraints;
+function _getStudentConstraintsForQuotas_(student, quotasForClass) {
+    if (!student) return [];
 
     const optCandidates = [];
     if (student.optionKey) optCandidates.push(student.optionKey);
     if (student.OPT) optCandidates.push(student.OPT);
 
+    const simpleSet = new Set();
+
     optCandidates.forEach(function(raw) {
         const normalized = _normalizeConstraintKeyForQuotas_(raw);
         if (normalized) {
-            constraints.push(normalized);
+            simpleSet.add(normalized);
         }
     });
 
     const lv2Normalized = _normalizeConstraintKeyForQuotas_(student.LV2);
     if (lv2Normalized && lv2Normalized !== 'ESP') {
-        constraints.push(lv2Normalized);
+        simpleSet.add(lv2Normalized);
     }
 
-    // Supprimer doublons
-    return constraints.filter(function(value, index, self) {
-        return value && self.indexOf(value) === index;
-    });
+    const finalSet = new Set(simpleSet);
+
+    if (quotasForClass) {
+        Object.keys(quotasForClass).forEach(function(quotaKey) {
+            if (quotaKey.indexOf('+') === -1) return;
+            const tokens = _getCombinedConstraintTokens_(quotaKey);
+            if (!tokens.length) return;
+            const satisfied = tokens.every(function(token) {
+                return simpleSet.has(token);
+            });
+            if (satisfied) {
+                finalSet.add(quotaKey);
+            }
+        });
+    }
+
+    return Array.from(finalSet);
 }
 
-function _countConstraintsForClass_(students) {
+function _countConstraintsForClass_(students, quotasForClass) {
     const counts = {};
     (students || []).forEach(function(stu) {
-        const constraints = _getStudentConstraintsForQuotas_(stu);
+        const constraints = _getStudentConstraintsForQuotas_(stu, quotasForClass);
         constraints.forEach(function(c) {
             counts[c] = (counts[c] || 0) + 1;
         });
@@ -1766,16 +1834,20 @@ function respecteContraintes(e1, e2, allStudents, structureData, optionsNiveauDa
         const classe1Students = _getStudentsForClass_(classesMap, e1.CLASSE);
         const classe2Students = _getStudentsForClass_(classesMap, e2.CLASSE);
 
-        const countsClasse1 = _countConstraintsForClass_(classe1Students);
-        const countsClasse2 = _countConstraintsForClass_(classe2Students);
+        const countsClasse1 = _countConstraintsForClass_(classe1Students, quotasClasse1);
+        const countsClasse2 = _countConstraintsForClass_(classe2Students, quotasClasse2);
 
-        const constraintsE1 = _getStudentConstraintsForQuotas_(e1);
-        const constraintsE2 = _getStudentConstraintsForQuotas_(e2);
+        const contraintesE1Classe1 = _getStudentConstraintsForQuotas_(e1, quotasClasse1);
+        const contraintesE2Classe2 = _getStudentConstraintsForQuotas_(e2, quotasClasse2);
 
-        _adjustCountsForConstraints_(countsClasse1, constraintsE1, -1);
-        _adjustCountsForConstraints_(countsClasse2, constraintsE2, -1);
-        _adjustCountsForConstraints_(countsClasse1, constraintsE2, +1);
-        _adjustCountsForConstraints_(countsClasse2, constraintsE1, +1);
+        _adjustCountsForConstraints_(countsClasse1, contraintesE1Classe1, -1);
+        _adjustCountsForConstraints_(countsClasse2, contraintesE2Classe2, -1);
+
+        const contraintesE2DansClasse1 = _getStudentConstraintsForQuotas_(e2, quotasClasse1);
+        const contraintesE1DansClasse2 = _getStudentConstraintsForQuotas_(e1, quotasClasse2);
+
+        _adjustCountsForConstraints_(countsClasse1, contraintesE2DansClasse1, +1);
+        _adjustCountsForConstraints_(countsClasse2, contraintesE1DansClasse2, +1);
 
         if (_wouldExceedQuotaAfterSwap_(countsClasse1, quotasClasse1, e1.CLASSE)) {
             return false;
